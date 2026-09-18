@@ -43,11 +43,11 @@ from typing import Any, Mapping, Sequence
 
 MANIFEST_SCHEMA_VERSION = 1
 
-# A comma route id is ``<counter>--<hex>`` (e.g. ``00000050--eabf0e8324``).
-# A full segment dir appends ``--<segment_index>``. We validate the shape so a
-# typo or a path fragment cannot masquerade as a route identity.
-_ROUTE_ID_RE = re.compile(r"^(0*[1-9][0-9]*)--([0-9a-f]{6,32})$")
-_SEGMENT_DIR_RE = re.compile(r"^(0*[1-9][0-9]*)--([0-9a-f]{6,32})--(0*[0-9]+)$")
+# Current loggerd route id: 32-bit counter formatted as 8 lowercase hex
+# characters plus a 10-character unique id, e.g. 000001a3--c20ba54385.
+# A segment directory appends --<segment_index>.
+_ROUTE_ID_RE = re.compile(r"^([0-9a-f]{8})--([a-z0-9]{10})$")
+_SEGMENT_DIR_RE = re.compile(r"^([0-9a-f]{8})--([a-z0-9]{10})--([0-9]+)$")
 
 # Schemes that are never acceptable as a local file reference (plan §5.2:
 # "reject traversal or remote URLs").
@@ -107,7 +107,7 @@ def parse_route_id(value: str) -> tuple[int, str]:
     m = _ROUTE_ID_RE.match(value)
     if not m:
         raise NnslerManifestError("invalid_route_id", value)
-    return int(m.group(1)), m.group(2)
+    return int(m.group(1), 16), m.group(2)
 
 
 def parse_segment_dir(value: str) -> tuple[int, str, int]:
@@ -117,7 +117,7 @@ def parse_segment_dir(value: str) -> tuple[int, str, int]:
     m = _SEGMENT_DIR_RE.match(value)
     if not m:
         raise NnslerManifestError("invalid_segment_dir", value)
-    return int(m.group(1)), m.group(2), int(m.group(3))
+    return int(m.group(1), 16), m.group(2), int(m.group(3))
 
 
 @dataclass(frozen=True)
@@ -143,7 +143,7 @@ class RouteIdentity:
 
     @property
     def route_id(self) -> str:
-        return f"{self.route_counter:08d}--{self.route_hex}"
+        return f"{self.route_counter:08x}--{self.route_hex}"
 
     @property
     def segment_dir(self) -> str:
