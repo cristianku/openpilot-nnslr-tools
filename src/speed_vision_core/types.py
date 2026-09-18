@@ -788,11 +788,11 @@ def frame_ref_from_dict(data: Mapping[str, Any]) -> FrameRef:
     return FrameRef(
         session_id=str(data["session_id"]),
         stream=StreamId(str(data["stream"])),
-        frame_id=int(data["frame_id"]),
-        capture_mono_ns=int(data["capture_mono_ns"]),
+        frame_id=_strict_int(data["frame_id"], "frame.frame_id"),
+        capture_mono_ns=_strict_int(data["capture_mono_ns"], "frame.capture_mono_ns"),
         capture_reference=CaptureReference(str(data.get("capture_reference", "unknown"))),
-        native_width=int(data.get("native_width", 0)),
-        native_height=int(data.get("native_height", 0)),
+        native_width=_strict_int(data.get("native_width", 0), "frame.native_width"),
+        native_height=_strict_int(data.get("native_height", 0), "frame.native_height"),
         preprocessing_identity=str(data.get("preprocessing_identity", "none")),
     )
 
