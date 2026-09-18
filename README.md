@@ -74,8 +74,15 @@ to the location of your speed-vision data, e.g.:
 export NNSLR_DATA_ROOT=/path/to/speed-vision-data
 ```
 
-Until real comma video is available, all data tooling works only on the
-synthetic fixtures shipped in `src/nnslr_tools/fixtures/`.
+T2 can process comma recordings that are already present locally. It never
+connects to the comma device. For qlog/rlog parsing, point the tooling at a
+matching local openpilot/sunnypilot checkout:
+
+```sh
+export NNSLR_OPENPILOT_ROOT=/path/to/openpilot
+# Optional when that checkout needs a different Python environment:
+export NNSLR_OPENPILOT_PYTHON=/path/to/openpilot-python
+```
 
 ---
 
@@ -102,12 +109,82 @@ The §7 contract (`speed_vision_core.types`) enforces, among other things:
 
 ---
 
+## T2 local comma video/log pipeline
+
+These commands operate only on files already copied under local storage. They
+do **not** SSH to, download from, or modify a comma device.
+
+| Command | Purpose |
+| --- | --- |
+| `nnslr route-manifest` | Inventory local route segments, hashes, missing/partial segments. |
+| `nnslr inspect-manifest` | Summarize a route manifest. |
+| `nnslr video-probe` | Probe fcamera/ecamera/qcamera with ffprobe. |
+| `nnslr extract-frames` | Decode with ffmpeg; defaults to 1 fps discovery sampling, with `--all-frames` available. |
+| `nnslr log-metadata` | Read local qlog/rlog(.zst) camera/map metadata through a matching local openpilot checkout. |
+| `nnslr align-route` | Join ffprobe presentation order to openpilot `EncodeIndex.segmentId`; preserve unresolved frames explicitly. |
+| `nnslr alignment-report` | Print deterministic alignment diagnostics. |
+| `nnslr find-candidates` | Use map speed transitions as search hints only, never ground truth. |
+| `nnslr make-clips` | Build local review clips around projected candidate times. |
+
+The production alignment path deliberately distinguishes:
+
+```text
+video PTS / presentation order
+        !=
+camera frameId
+        !=
+EncodeIndex.segmentIdEncode (encode order)
+        !=
+camera capture timestamp
+```
+
+Current openpilot defines `EncodeIndex.segmentId` as the index into the camera
+file in **presentation order**, so that field is the explicit join key used by
+the real local adapter. The old synthetic `manifest.align_frames()` helper
+remains fixture-only.
+
+Typical local flow:
+
+```sh
+export NNSLR_DATA_ROOT=/path/to/speed-vision-data
+export NNSLR_OPENPILOT_ROOT=/path/to/openpilot
+
+nnslr route-manifest raw/routes/000001a3--c20ba54385 \
+  --output manifests/routes.jsonl
+
+nnslr video-probe \
+  "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/fcamera.hevc"
+
+nnslr align-route \
+  --video "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/fcamera.hevc" \
+  --log "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/rlog.zst" \
+  --stream narrow_road \
+  --segment-num 0 \
+  --output "$NNSLR_DATA_ROOT/derived/alignment/segment-0.jsonl"
+
+nnslr find-candidates \
+  "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/rlog.zst" \
+  --alignment "$NNSLR_DATA_ROOT/derived/alignment/segment-0.jsonl" \
+  --output "$NNSLR_DATA_ROOT/manifests/candidates.jsonl"
+
+nnslr make-clips \
+  --video "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/fcamera.hevc" \
+  --candidates "$NNSLR_DATA_ROOT/manifests/candidates.jsonl" \
+  --output "$NNSLR_DATA_ROOT/derived/clips"
+
+nnslr extract-frames \
+  --video "$NNSLR_DATA_ROOT/raw/routes/000001a3--c20ba54385/0/fcamera.hevc" \
+  --output "$NNSLR_DATA_ROOT/derived/frames/discovery"
+```
+
+---
+
 ## What is not implemented yet (documented, not stubbed)
 
 `nnslr` lists these subcommands and refuses them with exit code `3` so a clean
 clone documents what does not exist rather than pretending:
 
-`check-environment` (full), `sync-routes`, `extract-frames` (T2);
+`check-environment` (full), `sync-routes` (remote/device data transfer remains intentionally out of scope);
 `import-annotations`, `validate-dataset`, `build-splits` (T3);
 `train` (T4), `evaluate` (T5), `mine-hard-examples` (T6),
 `export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).
