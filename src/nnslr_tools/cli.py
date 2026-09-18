@@ -378,7 +378,7 @@ def _cmd_extract_frames(args: argparse.Namespace) -> int:
     frames = extract_frames(
         Path(args.video),
         Path(args.output),
-        fps=args.fps,
+        fps=None if args.all_frames else args.fps,
         start_s=args.start,
         end_s=args.end,
         ffmpeg=args.ffmpeg,
@@ -619,7 +619,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract = sub.add_parser("extract-frames", help="extract LOCAL video frames with ffmpeg")
     p_extract.add_argument("--video", required=True)
     p_extract.add_argument("--output", required=True)
-    p_extract.add_argument("--fps", type=float)
+    p_extract.add_argument("--fps", type=float, default=1.0, help="sampling FPS (default: 1 for broad discovery)")
+    p_extract.add_argument("--all-frames", action="store_true", help="decode every frame instead of sampling")
     p_extract.add_argument("--start", type=float)
     p_extract.add_argument("--end", type=float)
     p_extract.add_argument("--ffmpeg")
