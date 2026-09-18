@@ -190,6 +190,9 @@ class ReasonCode:
     INVALID_VALUE_DOMAIN = "invalid_value_domain"
     INVALID_VALUE_CONSISTENCY = "invalid_value_consistency"
     INVALID_NATIVE_DIMENSIONS = "invalid_native_dimensions"
+    # [nnslr-t1] - START  (strict numeric deserialization: wrong type, no coercion)
+    INVALID_NUMERIC_TYPE = "invalid_numeric_type"
+    # [nnslr-t1] - END
 
 
 #: All documented reason codes; tests assert exhaustiveness of results against
