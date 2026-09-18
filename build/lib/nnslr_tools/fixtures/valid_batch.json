@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "frame": {
+    "session_id": "selftest",
+    "stream": "narrow_road",
+    "frame_id": 2,
+    "capture_mono_ns": 1000000000000,
+    "capture_reference": "sof",
+    "native_width": 1920,
+    "native_height": 1080,
+    "preprocessing_identity": "none"
+  },
+  "model_hash": "selftest-model",
+  "config_hash": "selftest-config",
+  "rulepack_hash": "selftest-rulepack",
+  "processed_mono_ns": 1000001000000,
+  "backend": "synthetic",
+  "backend_status": "ok",
+  "detections": [
+    {
+      "frame": {
+        "session_id": "selftest",
+        "stream": "narrow_road",
+        "frame_id": 2,
+        "capture_mono_ns": 1000000000000,
+        "capture_reference": "sof",
+        "native_width": 1920,
+        "native_height": 1080,
+        "preprocessing_identity": "none"
+      },
+      "bbox_xyxy": [100.0, 100.0, 300.0, 380.0],
+      "sign_family": "max_speed",
+      "value_state": "value",
+      "value_kph": 50,
+      "linked_panel_boxes": [],
+      "detection_score": 0.92,
+      "classification_score": 0.97,
+      "supported_domain": true,
+      "observation_id": "selftest:narrow_road:2#(100.0, 100.0, 300.0, 380.0)#max_speed"
+    }
+  ]
+}

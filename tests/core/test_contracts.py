@@ -27,17 +27,11 @@ from speed_vision_core.types import (
     REASON_CODE_REGISTRY,
     ReasonCode,
     NnslerContractError,
-    Agreement,
-    ApplicabilityVerdict,
     CaptureReference,
-    DisplayDecision,
     FrameRef,
-    FrameIdentity,
     HypothesisState,
     LimitHypothesis,
-    NnslerContractError as _ECE,  # noqa: F401  (alias kept for clarity)
     ObservationBatch,
-    PassageVerdict,
     SignFamily,
     SignTrack,
     SourceKind,
@@ -90,11 +84,11 @@ def make_det(frame: FrameRef, value_kph: int | None = 50,
     )
 
 
-def make_batch(frame: FrameRef, detections: tuple[Detection, ...] = (
-    make_det(frame),
-),
+def make_batch(frame: FrameRef, detections: tuple[Detection, ...] | None = None,
                now_ns: int = NOW_NS,
                processed_ns: int | None = None) -> ObservationBatch:
+    if detections is None:
+        detections = (make_det(frame),)
     return ObservationBatch(
         frame=frame,
         model_hash="m",

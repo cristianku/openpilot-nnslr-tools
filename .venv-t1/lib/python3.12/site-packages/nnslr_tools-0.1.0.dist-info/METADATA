@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: nnslr-tools
+Version: 0.1.0
+Summary: NN Vision Speed Limit (NNSLR) — standalone training, evaluation and pure reference core for a Swiss speed-sign recognizer. Advisory only; never in the control path.
+Author: Cristian
+License: MIT
+Project-URL: Homepage, https://github.com/cristianku/openpilot-nnslr-tools
+Keywords: openpilot,sunnypilot,speed-limit,vision,advisory
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Image Recognition
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Provides-Extra: cpu-test
+
+# openpilot-nnslr-tools
