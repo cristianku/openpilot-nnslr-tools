@@ -18,10 +18,10 @@ What lives here:
   first-class state, not an error to paper over);
 - the per-frame provenance record with the exact §5.2 field set
   (:class:`FrameManifestRecord`);
-- a deterministic, pure :func:`align_frames` join that reports matched /
-  unmatched / duplicate / discontinuous records and an estimated error bound,
-  without ever silently remapping a duplicate frame id or interpolating across
-  a missing segment;
+- a deterministic, pure :func:`align_frames` synthetic/reference join used by
+  fixtures and contract tests. Real comma alignment lives in
+  :mod:`nnslr_tools.alignment` and uses EncodeIndex.segmentId (presentation
+  order) explicitly;
 - path safety (:func:`normalize_relpath`) and content hashing
   (:func:`sha256_of`) that reject remote URLs, absolute paths and ``..``
   traversal.
@@ -43,11 +43,11 @@ from typing import Any, Mapping, Sequence
 
 MANIFEST_SCHEMA_VERSION = 1
 
-# A comma route id is ``<counter>--<hex>`` (e.g. ``00000050--eabf0e8324``).
-# A full segment dir appends ``--<segment_index>``. We validate the shape so a
-# typo or a path fragment cannot masquerade as a route identity.
-_ROUTE_ID_RE = re.compile(r"^(0*[1-9][0-9]*)--([0-9a-f]{6,32})$")
-_SEGMENT_DIR_RE = re.compile(r"^(0*[1-9][0-9]*)--([0-9a-f]{6,32})--(0*[0-9]+)$")
+# Current loggerd route id: 32-bit counter formatted as 8 lowercase hex
+# characters plus a 10-character unique id, e.g. 000001a3--c20ba54385.
+# A segment directory appends --<segment_index>.
+_ROUTE_ID_RE = re.compile(r"^([0-9a-f]{8})--([a-z0-9]{10})$")
+_SEGMENT_DIR_RE = re.compile(r"^([0-9a-f]{8})--([a-z0-9]{10})--([0-9]+)$")
 
 # Schemes that are never acceptable as a local file reference (plan §5.2:
 # "reject traversal or remote URLs").
@@ -107,7 +107,7 @@ def parse_route_id(value: str) -> tuple[int, str]:
     m = _ROUTE_ID_RE.match(value)
     if not m:
         raise NnslerManifestError("invalid_route_id", value)
-    return int(m.group(1)), m.group(2)
+    return int(m.group(1), 16), m.group(2)
 
 
 def parse_segment_dir(value: str) -> tuple[int, str, int]:
@@ -117,7 +117,7 @@ def parse_segment_dir(value: str) -> tuple[int, str, int]:
     m = _SEGMENT_DIR_RE.match(value)
     if not m:
         raise NnslerManifestError("invalid_segment_dir", value)
-    return int(m.group(1)), m.group(2), int(m.group(3))
+    return int(m.group(1), 16), m.group(2), int(m.group(3))
 
 
 @dataclass(frozen=True)
@@ -143,7 +143,7 @@ class RouteIdentity:
 
     @property
     def route_id(self) -> str:
-        return f"{self.route_counter:08d}--{self.route_hex}"
+        return f"{self.route_counter:08x}--{self.route_hex}"
 
     @property
     def segment_dir(self) -> str:
@@ -245,7 +245,7 @@ def sha256_of(path: Path) -> str:
 def classify_filekind(name: str) -> FileKind:
     """Classify a raw file by its suffix. Unknown → OTHER (never a video)."""
     lower = name.lower()
-    if lower.endswith((".mp4", ".mov", ".mkv", ".h264", ".hevc", ".265")):
+    if lower.endswith((".mp4", ".mov", ".mkv", ".ts", ".h264", ".hevc", ".265")):
         return FileKind.VIDEO
     if lower.endswith((".rlog.zst", ".rlog")):
         return FileKind.RLOG
@@ -618,8 +618,10 @@ def align_frames(
 ) -> tuple[list[FrameManifestRecord], AlignmentReport]:
     """Deterministically join decoded frames with encode-index metadata.
 
-    The join key is ``encoded_frame_id`` == ``decoded_frame_index`` (the
-    presentation-order frame number). A frame whose id is not in the index — or
+    SYNTHETIC/REFERENCE ONLY: the join key is ``encoded_frame_id`` ==
+    ``decoded_frame_index``. Production comma alignment must use
+    :func:`nnslr_tools.alignment.align_comma_segment`, where openpilot's
+    EncodeIndex.segmentId is the explicit presentation-order index. A frame whose id is not in the index — or
     whose id appears more than once in the index — is *unresolved*, never
     remapped. A metadata record with no matching frame is *unmatched
     metadata*. A non-monotonic capture sequence within the stream is a

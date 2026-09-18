@@ -11,12 +11,12 @@
     {
       "route": {
         "route_counter": 1,
-        "route_hex": "abcdef12",
+        "route_hex": "abcdef1234",
         "segment_index": 0,
-        "route_id": "00000001--abcdef12",
-        "segment_dir": "00000001--abcdef12--0"
+        "route_id": "00000001--abcdef1234",
+        "segment_dir": "00000001--abcdef1234--0"
       },
-      "relpath": "raw/00000001--abcdef12--0/rlog.zst",
+      "relpath": "raw/00000001--abcdef1234--0/rlog.zst",
       "kind": "rlog",
       "stream": null,
       "sha256": "rlog000000000000000000000000000000000000000000000000000000000001",
@@ -25,12 +25,12 @@
     {
       "route": {
         "route_counter": 1,
-        "route_hex": "abcdef12",
+        "route_hex": "abcdef1234",
         "segment_index": 0,
-        "route_id": "00000001--abcdef12",
-        "segment_dir": "00000001--abcdef12--0"
+        "route_id": "00000001--abcdef1234",
+        "segment_dir": "00000001--abcdef1234--0"
       },
-      "relpath": "raw/00000001--abcdef12--0/narrow.mp4",
+      "relpath": "raw/00000001--abcdef1234--0/narrow.mp4",
       "kind": "video",
       "stream": "narrow_road",
       "sha256": "video000000000000000000000000000000000000000000000000000000001",
@@ -39,12 +39,12 @@
     {
       "route": {
         "route_counter": 1,
-        "route_hex": "abcdef12",
+        "route_hex": "abcdef1234",
         "segment_index": 2,
-        "route_id": "00000001--abcdef12",
-        "segment_dir": "00000001--abcdef12--2"
+        "route_id": "00000001--abcdef1234",
+        "segment_dir": "00000001--abcdef1234--2"
       },
-      "relpath": "raw/00000001--abcdef12--2/rlog.zst",
+      "relpath": "raw/00000001--abcdef1234--2/rlog.zst",
       "kind": "rlog",
       "stream": null,
       "sha256": "rlog000000000000000000000000000000000000000000000000000000000002",

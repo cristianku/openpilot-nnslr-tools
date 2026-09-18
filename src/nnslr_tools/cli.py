@@ -40,6 +40,17 @@ from speed_vision_core.types import (
 )
 
 from nnslr_tools import __version__
+from nnslr_tools.alignment import align_comma_segment, comma_aligned_frame_from_dict
+from nnslr_tools.candidates import find_speed_candidates, project_candidates_to_video
+from nnslr_tools.comma_log import (
+    CommaLogError,
+    encode_events,
+    map_speed_events,
+    read_log_metadata,
+)
+from nnslr_tools.media import MediaToolError, extract_frames, make_clip, probe_frame_timestamps, probe_video
+from nnslr_tools.manifest import NnslerManifestError, RouteManifest
+from nnslr_tools.route_io import build_route_manifest
 
 
 # ---------------------------------------------------------------------------
@@ -284,13 +295,247 @@ def _selftest() -> int:
 
 
 # ---------------------------------------------------------------------------
+# T2 local comma file processing (never device access)
+# ---------------------------------------------------------------------------
+
+_STREAM_TO_ENCODE_SERVICE = {
+    "narrow_road": "narrowRoadEncodeIdx",
+    "wide_road": "wideRoadEncodeIdx",
+    "q_narrow_road": "qNarrowRoadEncodeIdx",
+}
+
+
+def _write_jsonl(path: Path | None, rows: list[dict[str, Any]]) -> None:
+    text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    if path is None:
+        sys.stdout.write(text)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    rows: list[dict[str, Any]] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}:{line_no}: expected JSON object")
+        rows.append(item)
+    return rows
+
+
+def _resolve_data_root(explicit: str | None) -> Path:
+    raw = (explicit or os.environ.get("NNSLR_DATA_ROOT", "")).strip()
+    if not raw:
+        raise ValueError("NNSLR_DATA_ROOT is not set; use --data-root or export it")
+    root = Path(raw).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"data root is not a directory: {root}")
+    return root
+
+
+def _cmd_route_manifest(args: argparse.Namespace) -> int:
+    root = _resolve_data_root(args.data_root)
+    manifest = build_route_manifest(root, Path(args.route))
+    text = manifest.to_jsonl()
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    print(json.dumps({
+        "output": str(output),
+        "declared_segments": list(manifest.declared_segments),
+        **manifest.gap_report(),
+        "file_count": len(manifest.files),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_inspect_manifest(args: argparse.Namespace) -> int:
+    path = Path(args.manifest)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    manifest = RouteManifest.from_jsonl(path.read_text(encoding="utf-8"))
+    print(json.dumps({
+        "schema_version": manifest.schema_version,
+        "declared_segments": list(manifest.declared_segments),
+        "file_count": len(manifest.files),
+        **manifest.gap_report(),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_video_probe(args: argparse.Namespace) -> int:
+    result = probe_video(Path(args.video), ffprobe=args.ffprobe)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_extract_frames(args: argparse.Namespace) -> int:
+    frames = extract_frames(
+        Path(args.video),
+        Path(args.output),
+        fps=None if args.all_frames else args.fps,
+        start_s=args.start,
+        end_s=args.end,
+        ffmpeg=args.ffmpeg,
+        overwrite=args.overwrite,
+    )
+    rows = [frame.to_dict() for frame in frames]
+    if args.manifest:
+        _write_jsonl(Path(args.manifest), rows)
+    print(json.dumps({
+        "frame_count": len(rows),
+        "output": str(Path(args.output)),
+        "manifest": args.manifest,
+        "timing": "media_only",
+        "capture_time_established": False,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_log_metadata(args: argparse.Namespace) -> int:
+    events = read_log_metadata(
+        Path(args.log),
+        openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
+    )
+    rows = [event.to_dict() for event in events]
+    _write_jsonl(Path(args.output) if args.output else None, rows)
+    return 0
+
+
+def _cmd_align_route(args: argparse.Namespace) -> int:
+    stream = args.stream
+    try:
+        service = _STREAM_TO_ENCODE_SERVICE[stream]
+    except KeyError as exc:
+        raise ValueError(f"unsupported stream {stream!r}") from exc
+
+    frames = probe_frame_timestamps(Path(args.video), ffprobe=args.ffprobe)
+    events = read_log_metadata(
+        Path(args.log),
+        openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
+    )
+    indexes = encode_events(events, service=service, segment_num=args.segment_num)
+    aligned, report = align_comma_segment(frames, indexes, segment_num=args.segment_num)
+
+    rows: list[dict[str, Any]] = [{
+        "kind": "alignment_report",
+        "stream": stream,
+        "video": str(Path(args.video)),
+        "log": str(Path(args.log)),
+        "segment_num": args.segment_num,
+        **report.to_dict(),
+    }]
+    rows.extend({"kind": "frame", **frame.to_dict()} for frame in aligned)
+    _write_jsonl(Path(args.output), rows)
+
+    print(json.dumps({
+        "output": str(Path(args.output)),
+        "stream": stream,
+        "segment_num": args.segment_num,
+        **report.to_dict(),
+    }, indent=2, sort_keys=True))
+    return 0 if report.unresolved == 0 else 1
+
+
+def _cmd_alignment_report(args: argparse.Namespace) -> int:
+    rows = _read_jsonl(Path(args.alignment))
+    header = next((row for row in rows if row.get("kind") == "alignment_report"), None)
+    if header is None:
+        raise ValueError("alignment JSONL has no alignment_report record")
+    print(json.dumps(header, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_find_candidates(args: argparse.Namespace) -> int:
+    events = read_log_metadata(
+        Path(args.log),
+        openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
+    )
+    candidates = find_speed_candidates(map_speed_events(events))
+
+    if args.alignment:
+        rows = _read_jsonl(Path(args.alignment))
+        aligned = [
+            comma_aligned_frame_from_dict(row)
+            for row in rows
+            if row.get("kind") == "frame"
+        ]
+        candidates = project_candidates_to_video(
+            candidates,
+            aligned,
+            max_error_ns=args.max_projection_error_ns,
+        )
+
+    _write_jsonl(
+        Path(args.output) if args.output else None,
+        [{"kind": "candidate", **candidate.to_dict()} for candidate in candidates],
+    )
+    return 0
+
+
+def _cmd_make_clips(args: argparse.Namespace) -> int:
+    rows = _read_jsonl(Path(args.candidates))
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    made: list[dict[str, Any]] = []
+    skipped = 0
+    for row in rows:
+        if row.get("kind") != "candidate":
+            continue
+        center = row.get("video_time_s")
+        if not isinstance(center, (int, float)) or isinstance(center, bool):
+            skipped += 1
+            continue
+        start = max(0.0, float(center) - args.before)
+        end = float(center) + args.after
+        candidate_id = str(row.get("candidate_id", f"candidate-{len(made)}"))
+        safe_id = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in candidate_id)
+        out = output_dir / f"{safe_id}.mp4"
+        make_clip(
+            Path(args.video),
+            out,
+            start_s=start,
+            end_s=end,
+            ffmpeg=args.ffmpeg,
+            reencode=args.reencode,
+        )
+        made.append({
+            "kind": "clip",
+            "candidate_id": candidate_id,
+            "clip_path": str(out),
+            "start_s": start,
+            "end_s": end,
+            "source_video": str(Path(args.video)),
+            "candidate_reason": row.get("candidate_reason"),
+            "source_log_mono_time": row.get("log_mono_time"),
+        })
+
+    if args.manifest:
+        _write_jsonl(Path(args.manifest), made)
+    print(json.dumps({
+        "clips_created": len(made),
+        "candidates_without_video_time": skipped,
+        "output": str(output_dir),
+        "manifest": args.manifest,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
     "sync-routes": ("T2", "remote access requires explicit authorization per drive"),
-    "extract-frames": ("T2", "needs the route/alignment contract from T2"),
     "import-annotations": ("T3", "annotation validator lands in T3"),
     "validate-dataset": ("T3", "annotation validator lands in T3"),
     "build-splits": ("T3", "leakage-resistant split builder lands in T3"),
@@ -359,6 +604,75 @@ def build_parser() -> argparse.ArgumentParser:
     p_self = sub.add_parser("selftest", help="run the bundled synthetic fixtures (CPU quickstart)")
     p_self.set_defaults(func=lambda a: _selftest())
 
+    p_route = sub.add_parser("route-manifest", help="inventory LOCAL route segments and preserve gaps")
+    p_route.add_argument("route", help="route directory under the data root, or one local segment directory")
+    p_route.add_argument("--data-root")
+    p_route.add_argument("--output", required=True)
+    p_route.set_defaults(func=_cmd_route_manifest)
+
+    p_inspect = sub.add_parser("inspect-manifest", help="summarize a route manifest JSONL")
+    p_inspect.add_argument("manifest")
+    p_inspect.set_defaults(func=_cmd_inspect_manifest)
+
+    p_probe = sub.add_parser("video-probe", help="probe a LOCAL camera video with ffprobe")
+    p_probe.add_argument("video")
+    p_probe.add_argument("--ffprobe")
+    p_probe.set_defaults(func=_cmd_video_probe)
+
+    p_extract = sub.add_parser("extract-frames", help="extract LOCAL video frames with ffmpeg")
+    p_extract.add_argument("--video", required=True)
+    p_extract.add_argument("--output", required=True)
+    p_extract.add_argument("--fps", type=float, default=1.0, help="sampling FPS (default: 1 for broad discovery)")
+    p_extract.add_argument("--all-frames", action="store_true", help="decode every frame instead of sampling")
+    p_extract.add_argument("--start", type=float)
+    p_extract.add_argument("--end", type=float)
+    p_extract.add_argument("--ffmpeg")
+    p_extract.add_argument("--manifest")
+    p_extract.add_argument("--overwrite", action="store_true")
+    p_extract.set_defaults(func=_cmd_extract_frames)
+
+    p_log = sub.add_parser("log-metadata", help="read LOCAL qlog/rlog camera/map metadata")
+    p_log.add_argument("log")
+    p_log.add_argument("--openpilot-root")
+    p_log.add_argument("--openpilot-python")
+    p_log.add_argument("--output")
+    p_log.set_defaults(func=_cmd_log_metadata)
+
+    p_align = sub.add_parser("align-route", help="align LOCAL video presentation order to EncodeIndex")
+    p_align.add_argument("--video", required=True)
+    p_align.add_argument("--log", required=True)
+    p_align.add_argument("--stream", required=True, choices=sorted(_STREAM_TO_ENCODE_SERVICE))
+    p_align.add_argument("--segment-num", required=True, type=int)
+    p_align.add_argument("--output", required=True)
+    p_align.add_argument("--openpilot-root")
+    p_align.add_argument("--openpilot-python")
+    p_align.add_argument("--ffprobe")
+    p_align.set_defaults(func=_cmd_align_route)
+
+    p_report = sub.add_parser("alignment-report", help="print the report header from alignment JSONL")
+    p_report.add_argument("alignment")
+    p_report.set_defaults(func=_cmd_alignment_report)
+
+    p_candidates = sub.add_parser("find-candidates", help="find map transitions as search hints, never ground truth")
+    p_candidates.add_argument("log")
+    p_candidates.add_argument("--openpilot-root")
+    p_candidates.add_argument("--openpilot-python")
+    p_candidates.add_argument("--alignment")
+    p_candidates.add_argument("--output")
+    p_candidates.add_argument("--max-projection-error-ns", type=int, default=250_000_000)
+    p_candidates.set_defaults(func=_cmd_find_candidates)
+
+    p_clips = sub.add_parser("make-clips", help="make LOCAL review clips around projected candidates")
+    p_clips.add_argument("--video", required=True)
+    p_clips.add_argument("--candidates", required=True)
+    p_clips.add_argument("--output", required=True)
+    p_clips.add_argument("--manifest")
+    p_clips.add_argument("--before", type=float, default=30.0)
+    p_clips.add_argument("--after", type=float, default=30.0)
+    p_clips.add_argument("--ffmpeg")
+    p_clips.add_argument("--reencode", action="store_true")
+    p_clips.set_defaults(func=_cmd_make_clips)
+
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
         p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
@@ -390,6 +704,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except json.JSONDecodeError as exc:
         print(f"error: invalid JSON: {exc}", file=sys.stderr)
+        return 2
+    except (MediaToolError, CommaLogError, NnslerManifestError) as exc:
+        detail = getattr(exc, "detail", "")
+        stderr = getattr(exc, "stderr", "")
+        print(f"error: {exc}", file=sys.stderr)
+        if detail and detail not in str(exc):
+            print(detail, file=sys.stderr)
+        if stderr:
+            print(stderr, file=sys.stderr)
+        return 2
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
 

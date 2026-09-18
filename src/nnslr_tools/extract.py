@@ -9,10 +9,9 @@ classification-only extraction with an explicit non-timing status").
 
 What it does *not* do, by design:
 
-- It does **not** decode video. Real frame extraction from comma video needs
-  the route/encoding adapter and an authorized decode path; that is a later,
-  separately authorized step (plan §5.3, §T2). Until then, no real
-  frame/log alignment is established.
+- This module itself does **not** decode video; real LOCAL comma video decoding
+  lives in :mod:`nnslr_tools.media` and is exposed by `nnslr extract-frames`.
+  Device access is not required and is not performed.
 - It does **not** invent timing. Every record it emits has
   ``alignment_status = "unresolved"``, ``capture_mono_ns = null`` and
   ``estimated_error_ns = null``. Such a frame is a legitimate *crop* source
@@ -118,8 +117,8 @@ def extract_report_dict(records: Sequence[FrameManifestRecord]) -> dict[str, obj
         "note": (
             "classification-only extraction: frames are valid crop sources but "
             "carry no capture timing; they are excluded from passage/latency "
-            "claims (plan §5.2/§T2). Real video extraction is a separately "
-            "authorized step and is not implemented here."
+            "claims (plan §5.2/§T2). Real local video extraction is provided "
+            "by nnslr_tools.media and the nnslr extract-frames CLI."
         ),
     }
 # [nnslr-t2] - END
