@@ -245,7 +245,7 @@ def sha256_of(path: Path) -> str:
 def classify_filekind(name: str) -> FileKind:
     """Classify a raw file by its suffix. Unknown → OTHER (never a video)."""
     lower = name.lower()
-    if lower.endswith((".mp4", ".mov", ".mkv", ".h264", ".hevc", ".265")):
+    if lower.endswith((".mp4", ".mov", ".mkv", ".ts", ".h264", ".hevc", ".265")):
         return FileKind.VIDEO
     if lower.endswith((".rlog.zst", ".rlog")):
         return FileKind.RLOG
