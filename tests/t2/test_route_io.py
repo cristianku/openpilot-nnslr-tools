@@ -31,3 +31,19 @@ def test_current_loggerd_route_id_uses_hex_counter() -> None:
     assert route.route_counter == 0x1A3
     assert route.route_id == "000001a3--c20ba54385"
     assert route.segment_dir == "000001a3--c20ba54385--7"
+
+
+def test_organized_route_layout_with_numeric_segment_dirs(tmp_path) -> None:
+    route = tmp_path / "000001a3--c20ba54385"
+    seg0 = route / "0"
+    seg1 = route / "1"
+    seg0.mkdir(parents=True)
+    seg1.mkdir()
+    (seg0 / "rlog.zst").write_bytes(b"log0")
+    (seg0 / "fcamera.hevc").write_bytes(b"video0")
+    (seg1 / "qlog.zst").write_bytes(b"log1")
+    (seg1 / "fcamera.hevc").write_bytes(b"video1")
+
+    manifest = build_route_manifest(tmp_path, route)
+    assert manifest.declared_segments == (0, 1)
+    assert all(status == SegmentStatus.COMPLETE for status in manifest.segment_status.values())
