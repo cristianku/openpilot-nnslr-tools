@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nnslr_tools.manifest import FileKind, SegmentStatus
+from nnslr_tools.manifest import FileKind, RouteIdentity, SegmentStatus
 from nnslr_tools.route_io import build_route_manifest
 
 
@@ -24,3 +24,10 @@ def test_route_manifest_preserves_missing_segment_and_qcamera_ts(tmp_path) -> No
     qcamera = next(f for f in manifest.files if f.relpath.endswith("qcamera.ts"))
     assert qcamera.kind == FileKind.VIDEO
     assert qcamera.stream == "q_narrow_road"
+
+
+def test_current_loggerd_route_id_uses_hex_counter() -> None:
+    route = RouteIdentity.from_segment_dir("000001a3--c20ba54385--7")
+    assert route.route_counter == 0x1A3
+    assert route.route_id == "000001a3--c20ba54385"
+    assert route.segment_dir == "000001a3--c20ba54385--7"
