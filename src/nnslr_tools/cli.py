@@ -401,6 +401,7 @@ def _cmd_log_metadata(args: argparse.Namespace) -> int:
     events = read_log_metadata(
         Path(args.log),
         openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
     )
     rows = [event.to_dict() for event in events]
     _write_jsonl(Path(args.output) if args.output else None, rows)
@@ -418,6 +419,7 @@ def _cmd_align_route(args: argparse.Namespace) -> int:
     events = read_log_metadata(
         Path(args.log),
         openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
     )
     indexes = encode_events(events, service=service, segment_num=args.segment_num)
     aligned, report = align_comma_segment(frames, indexes, segment_num=args.segment_num)
@@ -455,6 +457,7 @@ def _cmd_find_candidates(args: argparse.Namespace) -> int:
     events = read_log_metadata(
         Path(args.log),
         openpilot_root=Path(args.openpilot_root) if args.openpilot_root else None,
+        python_executable=args.openpilot_python,
     )
     candidates = find_speed_candidates(map_speed_events(events))
 
@@ -631,6 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_log = sub.add_parser("log-metadata", help="read LOCAL qlog/rlog camera/map metadata")
     p_log.add_argument("log")
     p_log.add_argument("--openpilot-root")
+    p_log.add_argument("--openpilot-python")
     p_log.add_argument("--output")
     p_log.set_defaults(func=_cmd_log_metadata)
 
@@ -641,6 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_align.add_argument("--segment-num", required=True, type=int)
     p_align.add_argument("--output", required=True)
     p_align.add_argument("--openpilot-root")
+    p_align.add_argument("--openpilot-python")
     p_align.add_argument("--ffprobe")
     p_align.set_defaults(func=_cmd_align_route)
 
@@ -651,6 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_candidates = sub.add_parser("find-candidates", help="find map transitions as search hints, never ground truth")
     p_candidates.add_argument("log")
     p_candidates.add_argument("--openpilot-root")
+    p_candidates.add_argument("--openpilot-python")
     p_candidates.add_argument("--alignment")
     p_candidates.add_argument("--output")
     p_candidates.add_argument("--max-projection-error-ns", type=int, default=250_000_000)
