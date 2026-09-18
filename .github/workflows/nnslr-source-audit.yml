@@ -1,0 +1,75 @@
+name: NNSLR pinned source audit
+
+on:
+  push:
+    branches: [nnslr/runtime-reapply-v1]
+    paths:
+      - '.github/workflows/nnslr-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: train
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cristianku/sunnypilot
+          ref: a5f44653d7f43ad57fef2f546f3916ec4cbf3c56
+          path: runtime
+          persist-credentials: false
+          lfs: false
+          submodules: false
+          sparse-checkout: |
+            openpilot/cereal
+            openpilot/common
+            openpilot/sunnypilot
+            openpilot/system/manager
+            openpilot/system/loggerd
+            openpilot/selfdrive/ui
+            openpilot/selfdrive/modeld
+            .gitmodules
+            pyproject.toml
+            .python-version
+            LICENSE.md
+          sparse-checkout-cone-mode: false
+      - name: Collect tracked public text only, never credentials or datasets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib, shutil, subprocess
+          out = pathlib.Path('source-evidence'); out.mkdir()
+          suffixes = {'.py', '.capnp', '.cc', '.h', '.md', '.json', '.toml', '.yml', '.yaml'}
+          for name in ('train', 'runtime'):
+              root = pathlib.Path(name)
+              commit = subprocess.check_output(['git','-C',name,'rev-parse','HEAD'], text=True).strip()
+              tree = subprocess.check_output(['git','-C',name,'ls-tree','-r','HEAD'], text=True)
+              files = {}
+              for line in tree.splitlines():
+                  meta, rel = line.split('\t',1); mode, kind, oid = meta.split()
+                  p = root/rel
+                  if kind != 'blob' or mode == '120000' or not p.is_file(): continue
+                  if p.suffix not in suffixes and p.name not in ('.gitmodules','.python-version','LICENSE','SConscript','SConstruct','py.typed'): continue
+                  if p.stat().st_size > 2000000: continue
+                  data = p.read_bytes()
+                  if b'\0' in data: continue
+                  try: data.decode('utf-8')
+                  except UnicodeDecodeError: continue
+                  dest = out/name/rel; dest.parent.mkdir(parents=True, exist_ok=True); dest.write_bytes(data)
+                  files[rel] = {'git_blob':oid,'sha256':hashlib.sha256(data).hexdigest()}
+              (out/(name+'-tree.txt')).write_text(tree)
+              (out/(name+'-provenance.json')).write_text(json.dumps({'commit':commit,'files':files}, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nnslr-pinned-public-source
+          path: source-evidence/
+          retention-days: 7
+          if-no-files-found: error
