@@ -262,7 +262,7 @@ def read_log_metadata(
     if not log_path.is_file():
         raise CommaLogError("log_not_found", str(log_path))
     root = resolve_openpilot_root(openpilot_root)
-    exe = python_executable or sys.executable
+    exe = python_executable or os.environ.get("NNSLR_OPENPILOT_PYTHON") or sys.executable
 
     proc = subprocess.run(
         [exe, "-c", _CHILD_SCRIPT, str(root), str(log_path.resolve())],
