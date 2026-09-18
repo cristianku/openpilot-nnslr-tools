@@ -217,6 +217,9 @@ REASON_CODE_REGISTRY: frozenset[str] = frozenset(
         ReasonCode.INVALID_VALUE_DOMAIN,
         ReasonCode.INVALID_VALUE_CONSISTENCY,
         ReasonCode.INVALID_NATIVE_DIMENSIONS,
+        # [nnslr-t1] - START  (strict numeric deserialization)
+        ReasonCode.INVALID_NUMERIC_TYPE,
+        # [nnslr-t1] - END
     }
 )
 
