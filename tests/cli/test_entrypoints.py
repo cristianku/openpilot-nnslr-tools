@@ -41,6 +41,9 @@ def test_help_exits_zero_and_prints_usage(capsys) -> None:
     assert "usage:" in out.lower()
     assert "validate-batch" in out
     assert "selftest" in out
+    assert "video-probe" in out
+    assert "extract-frames" in out
+    assert "align-route" in out
 
 
 def test_version_exits_zero_and_reports_schema(capsys) -> None:
@@ -165,7 +168,7 @@ def test_selftest_passes(capsys) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "sync-routes", "extract-frames", "import-annotations",
+        "sync-routes", "import-annotations",
         "validate-dataset", "build-splits", "train", "evaluate",
         "mine-hard-examples", "export-onnx", "replay",
         "package-model", "verify-bundle", "export-core",
