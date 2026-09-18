@@ -73,14 +73,22 @@ class CaptureReference(str, Enum):
 
 
 class SignFamily(str, Enum):
-    """Swiss sign families the recognizer targets (plan §5 vocabulary)."""
+    """Swiss sign families the recognizer targets (plan §5 vocabulary).
+
+    These are perception classes only: recognition and legal/rule
+    interpretation remain separate (plan §5/§10). A conditional panel
+    (e.g. time restriction) is carried by ``Detection.linked_panel_boxes``,
+    not as a family. ``OTHER_SIGN``/``NOT_A_SIGN``/``UNREADABLE`` exist so
+    excluded semantics can be *surfaced* (e.g. as unknown) rather than
+    silently dropped (plan §5 challenge-group requirement)."""
 
     MAX_SPEED = "max_speed"
-    MIN_SPEED = "min_speed"
-    END_OF_MIN_SPEED = "end_of_min_speed"
-    #: Conditional panel (e.g. time/day restriction) linked to a sign.
-    CONDITIONAL_PANEL = "conditional_panel"
-    UNKNOWN = "unknown"
+    CANCELLATION = "cancellation"
+    ZONE = "zone"
+    VARIABLE_DISPLAY = "variable_display"
+    OTHER_SIGN = "other_sign"
+    NOT_A_SIGN = "not_a_sign"
+    UNREADABLE = "unreadable"
 
 
 class ValueState(str, Enum):
@@ -546,6 +554,10 @@ def _validate_bbox(bbox: Sequence[float], frame: FrameRef) -> tuple[str, ...]:
         return (ReasonCode.INVALID_BOX_DEGENERATE,)
     if not (x1 < x2 and y1 < y2):
         return (ReasonCode.INVALID_BOX_DEGENERATE,)
+    if frame.native_width <= 0 or frame.native_height <= 0:
+        # Native dimensions are invalid at the batch level; geometry bounds
+        # cannot be evaluated here — the batch code reports it.
+        return ()
     if x1 < 0 or y1 < 0 or x2 > frame.native_width or y2 > frame.native_height:
         return (ReasonCode.INVALID_BOX_OUT_OF_BOUNDS,)
     return ()
@@ -567,10 +579,28 @@ def _validate_value_state(value_state: ValueState, value_kph: int | None) -> tup
     return ()
 
 
+def _validate_frame_ref(det_frame: FrameRef, frame: FrameRef) -> tuple[str, ...]:
+    """A detection must refer to the *exact* frame of its batch: identity and
+    every timing/native field must match (plan §7.1). A mismatched field
+    (capture time, reference edge, native size, preprocessing) is a
+    clock-domain/consistency violation, not a silent merge."""
+    if det_frame.identity() != frame.identity():
+        return (ReasonCode.INVALID_CLOCK_DOMAIN,)
+    for name in (
+        "capture_mono_ns",
+        "capture_reference",
+        "native_width",
+        "native_height",
+        "preprocessing_identity",
+    ):
+        if getattr(det_frame, name) != getattr(frame, name):
+            return (ReasonCode.INVALID_CLOCK_DOMAIN,)
+    return ()
+
+
 def _validate_detection(det: Detection, frame: FrameRef) -> tuple[str, ...]:
     codes: list[str] = []
-    if det.frame.identity() != frame.identity():
-        codes.append(ReasonCode.INVALID_CLOCK_DOMAIN)
+    codes.extend(_validate_frame_ref(det.frame, frame))
     if not _is_finite_in_unit_interval(det.detection_score):
         if not math.isfinite(det.detection_score):
             codes.append(ReasonCode.INVALID_NONFINITE_SCORE)
@@ -582,6 +612,10 @@ def _validate_detection(det: Detection, frame: FrameRef) -> tuple[str, ...]:
         else:
             codes.append(ReasonCode.INVALID_SCORE_RANGE)
     codes.extend(_validate_bbox(det.bbox_xyxy, frame))
+    # [nnslr-t1] - START  (linked panels: same geometric rules as the bbox)
+    for panel in det.linked_panel_boxes:
+        codes.extend(_validate_bbox(panel, frame))
+    # [nnslr-t1] - END
     codes.extend(_validate_value_state(det.value_state, det.value_kph))
     return tuple(dict.fromkeys(codes))
 
