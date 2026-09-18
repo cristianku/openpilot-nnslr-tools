@@ -6,8 +6,8 @@ from nnslr_tools.route_io import build_route_manifest
 
 def test_route_manifest_preserves_missing_segment_and_qcamera_ts(tmp_path) -> None:
     root = tmp_path
-    seg0 = root / "00000001--abcdef12--0"
-    seg2 = root / "00000001--abcdef12--2"
+    seg0 = root / "00000001--abcdef1234--0"
+    seg2 = root / "00000001--abcdef1234--2"
     seg0.mkdir()
     seg2.mkdir()
     (seg0 / "rlog.zst").write_bytes(b"log0")
