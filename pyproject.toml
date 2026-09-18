@@ -1,0 +1,46 @@
+# [nnslr-t1] - START
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nnslr-tools"
+version = "0.1.0"
+description = "NN Vision Speed Limit (NNSLR) — standalone training, evaluation and pure reference core for a Swiss speed-sign recognizer. Advisory only; never in the control path."
+readme = "README.md"
+requires-python = ">=3.11"
+# T1 is dependency-free on purpose: the pure core and the CLI must import and
+# run without CUDA, PyTorch, tinygrad, openpilot or cereal.
+dependencies = []
+license = { text = "MIT" }
+authors = [{ name = "Cristian" }]
+keywords = ["openpilot", "sunnypilot", "speed-limit", "vision", "advisory"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+[project.optional-dependencies]
+# The CPU test profile stays empty at T1 (stdlib-only tests). GPU/training
+# profiles are added by their owning tasks (T4+) and must never be required
+# by core/data/cli tests.
+cpu-test = []
+
+[project.scripts]
+nnslr = "nnslr_tools.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cristianku/openpilot-nnslr-tools"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "gpu: real GPU workload tests (never run in the default CPU profile)",
+]
+# [nnslr-t1] - END
