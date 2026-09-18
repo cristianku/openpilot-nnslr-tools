@@ -53,6 +53,52 @@ class CommaAlignedFrame:
         }
 
 
+def comma_aligned_frame_from_dict(data: dict[str, Any]) -> CommaAlignedFrame:
+    """Strict-enough loader for alignment JSONL produced by this package."""
+    def opt_int(name: str) -> int | None:
+        value = data.get(name)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be int|null")
+        return value
+
+    def opt_float(name: str) -> float | None:
+        value = data.get(name)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be number|null")
+        return float(value)
+
+    idx = data.get("decoded_frame_index")
+    if isinstance(idx, bool) or not isinstance(idx, int):
+        raise ValueError("decoded_frame_index must be int")
+    capture_reference = data.get("capture_reference")
+    alignment_status = data.get("alignment_status")
+    if not isinstance(capture_reference, str) or not isinstance(alignment_status, str):
+        raise ValueError("capture_reference/alignment_status must be strings")
+    reason = data.get("alignment_reason")
+    if reason is not None and not isinstance(reason, str):
+        raise ValueError("alignment_reason must be string|null")
+
+    return CommaAlignedFrame(
+        decoded_frame_index=idx,
+        video_pts_time_s=opt_float("video_pts_time_s"),
+        video_best_effort_time_s=opt_float("video_best_effort_time_s"),
+        frame_id=opt_int("frame_id"),
+        segment_num=opt_int("segment_num"),
+        segment_id=opt_int("segment_id"),
+        segment_id_encode=opt_int("segment_id_encode"),
+        timestamp_sof=opt_int("timestamp_sof"),
+        timestamp_eof=opt_int("timestamp_eof"),
+        capture_mono_ns=opt_int("capture_mono_ns"),
+        capture_reference=capture_reference,
+        alignment_status=alignment_status,
+        alignment_reason=reason,
+    )
+
+
 @dataclass(frozen=True)
 class CommaAlignmentReport:
     frame_count: int
