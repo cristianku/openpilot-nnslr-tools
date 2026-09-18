@@ -129,6 +129,25 @@ def test_validate_batch_missing_file_exits_two(capsys) -> None:
     assert "not found" in err
 
 
+def test_validate_batch_rejects_wrong_numeric_type(capsys, tmp_path) -> None:
+    # A string frame_id must be rejected as a type error (no coercion),
+    # reported with the stable invalid_numeric_type code and exit 1.
+    payload = json.loads(VALID.read_text(encoding="utf-8"))
+    payload["frame"]["frame_id"] = "2"
+    bad = tmp_path / "bad_frame_id.json"
+    bad.write_text(json.dumps(payload), encoding="utf-8")
+    code, out, _ = run(
+        ["validate-batch", str(bad),
+         "--now-mono-ns", str(VALID_CAPTURE_NS + 10_000_000),
+         "--expected-session-id", SESSION],
+        capsys,
+    )
+    assert code == 1
+    result = json.loads(out)
+    assert result["accepted"] is False
+    assert result["reason_codes"] == ["invalid_numeric_type"]
+
+
 # ---------------------------------------------------------------------------
 # Selftest quickstart
 # ---------------------------------------------------------------------------

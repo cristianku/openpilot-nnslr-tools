@@ -1,0 +1,9 @@
+# NNSLR — CPU dependency lock
+#
+# T1 is stdlib-only: there are NO third-party runtime or test dependencies.
+# This lock is intentionally empty so the CPU profile is explicit and
+# reproducible (pip install -r requirements/cpu.lock installs nothing).
+#
+# Adding a line here is an explicit, logged decision (see AGENTS.md).
+# GPU / training dependencies (torch, tinygrad, ...) are NOT part of this
+# profile and must never appear in the CPU lock.
