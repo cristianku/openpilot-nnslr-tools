@@ -49,6 +49,8 @@ from nnslr_tools.comma_log import (
     read_log_metadata,
 )
 from nnslr_tools.media import MediaToolError, extract_frames, make_clip, probe_frame_timestamps, probe_video
+from nnslr_tools.manifest import NnslerManifestError, RouteManifest
+from nnslr_tools.route_io import build_route_manifest
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +328,46 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _resolve_data_root(explicit: str | None) -> Path:
+    raw = (explicit or os.environ.get("NNSLR_DATA_ROOT", "")).strip()
+    if not raw:
+        raise ValueError("NNSLR_DATA_ROOT is not set; use --data-root or export it")
+    root = Path(raw).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"data root is not a directory: {root}")
+    return root
+
+
+def _cmd_route_manifest(args: argparse.Namespace) -> int:
+    root = _resolve_data_root(args.data_root)
+    manifest = build_route_manifest(root, Path(args.route))
+    text = manifest.to_jsonl()
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    print(json.dumps({
+        "output": str(output),
+        "declared_segments": list(manifest.declared_segments),
+        **manifest.gap_report(),
+        "file_count": len(manifest.files),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_inspect_manifest(args: argparse.Namespace) -> int:
+    path = Path(args.manifest)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    manifest = RouteManifest.from_jsonl(path.read_text(encoding="utf-8"))
+    print(json.dumps({
+        "schema_version": manifest.schema_version,
+        "declared_segments": list(manifest.declared_segments),
+        "file_count": len(manifest.files),
+        **manifest.gap_report(),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
 def _cmd_video_probe(args: argparse.Namespace) -> int:
     result = probe_video(Path(args.video), ffprobe=args.ffprobe)
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -559,6 +601,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_self = sub.add_parser("selftest", help="run the bundled synthetic fixtures (CPU quickstart)")
     p_self.set_defaults(func=lambda a: _selftest())
 
+    p_route = sub.add_parser("route-manifest", help="inventory LOCAL route segments and preserve gaps")
+    p_route.add_argument("route", help="route directory under the data root, or one local segment directory")
+    p_route.add_argument("--data-root")
+    p_route.add_argument("--output", required=True)
+    p_route.set_defaults(func=_cmd_route_manifest)
+
+    p_inspect = sub.add_parser("inspect-manifest", help="summarize a route manifest JSONL")
+    p_inspect.add_argument("manifest")
+    p_inspect.set_defaults(func=_cmd_inspect_manifest)
+
     p_probe = sub.add_parser("video-probe", help="probe a LOCAL camera video with ffprobe")
     p_probe.add_argument("video")
     p_probe.add_argument("--ffprobe")
@@ -646,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as exc:
         print(f"error: invalid JSON: {exc}", file=sys.stderr)
         return 2
-    except (MediaToolError, CommaLogError) as exc:
+    except (MediaToolError, CommaLogError, NnslerManifestError) as exc:
         detail = getattr(exc, "detail", "")
         stderr = getattr(exc, "stderr", "")
         print(f"error: {exc}", file=sys.stderr)
