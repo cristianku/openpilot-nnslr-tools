@@ -243,13 +243,21 @@ def sha256_of(path: Path) -> str:
 
 
 def classify_filekind(name: str) -> FileKind:
-    """Classify a raw file by its suffix. Unknown → OTHER (never a video)."""
-    lower = name.lower()
+    """Classify a raw comma file name. Unknown -> OTHER (never a video).
+
+    Loggerd uses bare names such as rlog.zst and qlog.zst (there is no
+    leading dot before rlog/qlog), so those canonical names must be matched
+    explicitly. Historical/unpacked variants are accepted too.
+    """
+    lower = Path(name).name.lower()
     if lower.endswith((".mp4", ".mov", ".mkv", ".ts", ".h264", ".hevc", ".265")):
         return FileKind.VIDEO
-    if lower.endswith((".rlog.zst", ".rlog")):
+
+    rlog_names = {"rlog", "rlog.zst", "rlog.bz2"}
+    qlog_names = {"qlog", "qlog.zst", "qlog.bz2"}
+    if lower in rlog_names or lower.endswith((".rlog", ".rlog.zst", ".rlog.bz2")):
         return FileKind.RLOG
-    if lower.endswith((".qlog.zst", ".qlog")):
+    if lower in qlog_names or lower.endswith((".qlog", ".qlog.zst", ".qlog.bz2")):
         return FileKind.QLOG
     return FileKind.OTHER
 
