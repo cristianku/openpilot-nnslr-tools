@@ -1,0 +1,27 @@
+[
+  {
+    "encoded_frame_id": 0,
+    "capture_mono_ns": 1000,
+    "capture_reference": "sof"
+  },
+  {
+    "encoded_frame_id": 1,
+    "capture_mono_ns": 2000,
+    "capture_reference": "sof"
+  },
+  {
+    "encoded_frame_id": 3,
+    "capture_mono_ns": 4000,
+    "capture_reference": "sof"
+  },
+  {
+    "encoded_frame_id": 3,
+    "capture_mono_ns": 4100,
+    "capture_reference": "sof"
+  },
+  {
+    "encoded_frame_id": 5,
+    "capture_mono_ns": 9000,
+    "capture_reference": "sof"
+  }
+]

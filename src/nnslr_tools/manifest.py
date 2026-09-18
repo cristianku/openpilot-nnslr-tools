@@ -754,4 +754,19 @@ def frames_to_jsonl(records: Sequence[FrameManifestRecord]) -> str:
 def frames_from_jsonl(text: str) -> list[FrameManifestRecord]:
     lines = [ln for ln in text.splitlines() if ln.strip()]
     return [FrameManifestRecord.from_dict(json.loads(ln)) for ln in lines]
+
+
+def parse_segment_list(value: str) -> list[int]:
+    """Parse ``"0,1,2"`` into ``[0, 1, 2]``. Empty string → ``[]``.
+
+    Rejects non-integers and negatives; no coercion of booleans/floats."""
+    out: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not part.lstrip("-").isdigit() or int(part) < 0:
+            raise NnslerManifestError("invalid_segment_list", value)
+        out.append(int(part))
+    return out
 # [nnslr-t2] - END
