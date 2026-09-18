@@ -1,0 +1,39 @@
+# [nnslr-hygiene] - START
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtualenvs ---
+.venv*/
+venv/
+env/
+
+# --- Secrets / local config ---
+.env
+.env.*
+
+# --- Logs ---
+*.log
+
+# --- ML / project-generated data (never version) ---
+datasets/
+data/
+videos/
+logs/
+runs/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+# NOTE: deliberately versioned deployment/export artifacts (e.g. a final
+# ONNX bundle) must be force-added with `git add -f <path>` and documented
+# in docs/vision-speed-limit/decisions.md at that time.
+# [nnslr-hygiene] - END
