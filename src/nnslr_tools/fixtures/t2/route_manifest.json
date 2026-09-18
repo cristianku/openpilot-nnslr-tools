@@ -5,7 +5,7 @@
   "segment_status": {
     "0": "complete",
     "1": "missing",
-    "2": "complete"
+    "2": "partial"
   },
   "files": [
     {
