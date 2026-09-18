@@ -186,15 +186,15 @@ def _selftest() -> int:
     provide ``recent_frame_keys`` explicitly (see ``_NOW_OVERRIDES`` and
     ``_RECENT_KEYS``).
     """
-    # Fixtures whose rejection depends on the injected "now", not on the
-    # payload alone: ``now = capture + 5 s`` > default 0.35 s window (stale)
-    # and beyond the capture itself (future).
-    _NOW_OVERRIDES = {
-        "malformed_stale_evidence.json",
-        "malformed_invalid_capture_timestamp_future.json",
+    # Most fixtures use a small positive offset (fresh capture). A few test the
+    # freshness rules and need a specific offset relative to the capture:
+    #   stale  -> now = capture + 5 s  (age 5 s > 0.35 s window)
+    #   future -> now = capture - 1 s  (capture is in the future of "now")
+    _NOW_OFFSETS_NS = {
+        "malformed_stale_evidence.json": 5_000_000_000,
+        "malformed_invalid_capture_timestamp_future.json": -1_000_000_000,
     }
-    _NOW_OFFSET_NS = 10_000_000  # +10 ms, well inside the 0.35 s window
-    _STALE_NOW_OFFSET_NS = 5_000_000_000  # +5 s, beyond the 0.35 s window
+    _DEFAULT_NOW_OFFSET_NS = 10_000_000  # +10 ms, well inside the 0.35 s window
 
     # Fixture whose rejection depends on the recent-frame set, not on the
     # payload alone: the frame identity is already present.
@@ -216,7 +216,7 @@ def _selftest() -> int:
     # 1) validate-batch on the valid fixture.
     with (fixtures_dir / "valid_batch.json").open() as f:
         payload = json.load(f)
-    now = int(payload["frame"]["capture_mono_ns"]) + _NOW_OFFSET_NS  # +10 ms
+    now = int(payload["frame"]["capture_mono_ns"]) + _DEFAULT_NOW_OFFSET_NS  # +10 ms
     result = validate_batch_from_payload(payload, now_mono_ns=now, expected_session_id="selftest")
     check("valid_batch accepted", result.accepted, str(result.reason_codes))
 
@@ -227,7 +227,7 @@ def _selftest() -> int:
             payload = json.load(f)
         expected_code = name[len("malformed_") : -len(".json")]
         capture = int(payload["frame"]["capture_mono_ns"])
-        offset = _STALE_NOW_OFFSET_NS if name in _NOW_OVERRIDES else _NOW_OFFSET_NS
+        offset = _NOW_OFFSETS_NS.get(name, _DEFAULT_NOW_OFFSET_NS)
         recent_keys = (
             frozenset({_RECENT_KEYS[name]}) if name in _RECENT_KEYS else None
         )
