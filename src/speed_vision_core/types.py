@@ -823,15 +823,18 @@ def detection_from_dict(data: Mapping[str, Any]) -> Detection:
         )
     return Detection(
         frame=frame_ref_from_dict(data["frame"]),
-        bbox_xyxy=tuple(float(v) for v in data["bbox_xyxy"]),
+        bbox_xyxy=tuple(_strict_float(v, "bbox_xyxy") for v in data["bbox_xyxy"]),
         sign_family=SignFamily(str(data["sign_family"])),
         value_state=value_state,
-        value_kph=None if value_state != ValueState.VALUE else int(value_kph),
+        value_kph=None if value_state != ValueState.VALUE else _strict_int(value_kph, "value_kph"),
         linked_panel_boxes=tuple(
-            tuple(float(v) for v in b) for b in data.get("linked_panel_boxes", ())
+            tuple(_strict_float(v, "linked_panel_boxes") for v in b)
+            for b in data.get("linked_panel_boxes", ())
         ),
-        detection_score=float(data.get("detection_score", 0.0)),
-        classification_score=float(data.get("classification_score", 0.0)),
+        detection_score=_strict_float(data.get("detection_score", 0.0), "detection_score"),
+        classification_score=_strict_float(
+            data.get("classification_score", 0.0), "classification_score"
+        ),
         supported_domain=bool(data.get("supported_domain", True)),
         observation_id=str(data.get("observation_id", "")),
     )
@@ -853,12 +856,14 @@ def batch_to_dict(batch: ObservationBatch) -> dict[str, Any]:
 
 def batch_from_dict(data: Mapping[str, Any]) -> ObservationBatch:
     return ObservationBatch(
-        schema_version=int(data.get("schema_version", SUPPORTED_SCHEMA_VERSION)),
+        schema_version=_strict_int(
+            data.get("schema_version", SUPPORTED_SCHEMA_VERSION), "schema_version"
+        ),
         frame=frame_ref_from_dict(data["frame"]),
         model_hash=str(data["model_hash"]),
         config_hash=str(data["config_hash"]),
         rulepack_hash=str(data.get("rulepack_hash", "")),
-        processed_mono_ns=int(data["processed_mono_ns"]),
+        processed_mono_ns=_strict_int(data["processed_mono_ns"], "processed_mono_ns"),
         backend=str(data["backend"]),
         backend_status=str(data.get("backend_status", "ok")),
         detections=tuple(detection_from_dict(d) for d in data.get("detections", ())),
@@ -879,7 +884,10 @@ def validation_result_from_dict(data: Mapping[str, Any]) -> ValidationResult:
         accepted=bool(data["accepted"]),
         batch_identity=str(data["batch_identity"]),
         reason_codes=tuple(str(c) for c in data.get("reason_codes", ())),
-        rejected_indices=tuple(int(i) for i in data.get("rejected_indices", ())),
+        rejected_indices=tuple(
+            _strict_int(v, f"rejected_indices[{i}]")
+            for i, v in enumerate(data.get("rejected_indices", ()))
+        ),
     )
 
 

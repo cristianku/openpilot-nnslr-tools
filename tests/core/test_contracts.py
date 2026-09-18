@@ -441,3 +441,284 @@ def test_source_snapshot_uses_meters_per_second() -> None:
 
 def test_vision_is_not_an_operational_source_kind() -> None:
     assert set(SourceKind) == {SourceKind.CAR, SourceKind.MAP}
+
+
+# ---------------------------------------------------------------------------
+# [nnslr-t1] Fix A: sign family vocabulary matches plan §5 exactly
+# ---------------------------------------------------------------------------
+
+def test_sign_family_vocabulary_matches_plan() -> None:
+    expected = {
+        "max_speed", "cancellation", "zone", "variable_display",
+        "other_sign", "not_a_sign", "unreadable",
+    }
+    assert {f.value for f in SignFamily} == expected
+
+
+def test_sign_family_serialization_round_trip() -> None:
+    import dataclasses
+
+    for family in SignFamily:
+        base = make_det(make_frame(), value_kph=None, value_state=ValueState.UNKNOWN)
+        det = dataclasses.replace(base, sign_family=family)
+        payload = types.detection_to_dict(det)
+        assert payload["sign_family"] == family.value
+        again = types.detection_from_dict(payload)
+        assert again.sign_family == family
+
+
+def test_unknown_sign_family_string_is_rejected() -> None:
+    det = make_det(make_frame())
+    payload = types.detection_to_dict(det)
+    payload["sign_family"] = "conditional_panel"  # not a perception class
+    with pytest.raises(ValueError):
+        types.detection_from_dict(payload)
+
+
+# ---------------------------------------------------------------------------
+# [nnslr-t1] Fix B: strict numeric deserialization (no silent coercion)
+# ---------------------------------------------------------------------------
+
+def _payload_with(frame_id=None, value_kph=None, schema_version=None,
+                  processed_ns=None, score=None, frame_override=None) -> dict:
+    frame = make_frame()
+    det = make_det(frame)
+    batch = make_batch(frame, (det,))
+    payload = types.batch_to_dict(batch)
+    if frame_id is not None:
+        payload["frame"]["frame_id"] = frame_id
+    if value_kph is not None:
+        payload["detections"][0]["value_kph"] = value_kph
+    if schema_version is not None:
+        payload["schema_version"] = schema_version
+    if processed_ns is not None:
+        payload["processed_mono_ns"] = processed_ns
+    if score is not None:
+        payload["detections"][0]["detection_score"] = score
+    if frame_override is not None:
+        for k, v in frame_override.items():
+            payload["frame"][k] = v
+            payload["detections"][0]["frame"][k] = v
+    return payload
+
+
+def test_strict_deser_rejects_bool_frame_id() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(frame_id=True))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_string_frame_id() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(frame_id="2"))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_integral_float_frame_id() -> None:
+    # 2.0 is a float: wrong type, not a silent 2.
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(frame_id=2.0))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_non_integral_float_value() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(value_kph=50.9))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_string_value_kph() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(value_kph="50"))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_bool_value_kph() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(value_kph=True))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_string_schema_version() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(schema_version="1"))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_string_processed_ns() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(processed_ns="1000001000000"))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_rejects_string_score() -> None:
+    with pytest.raises(NnslerContractError) as exc:
+        types.batch_from_dict(_payload_with(score="0.9"))
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+def test_strict_deser_accepts_int_score() -> None:
+    # 2 is an int: safe widening to 2.0, downstream range check then rejects
+    # it as out-of-unit-interval (not as a type error).
+    payload = _payload_with(score=2)
+    batch = types.batch_from_dict(payload)
+    assert batch.detections[0].detection_score == 2.0
+    result = types.validate_batch(
+        batch, now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert ReasonCode.INVALID_SCORE_RANGE in result.reason_codes
+
+
+def test_strict_deser_rejects_string_rejected_index() -> None:
+    payload = types.validation_result_to_dict(
+        types.ValidationResult(
+            accepted=True, batch_identity="s1:narrow_road:1",
+            reason_codes=(), rejected_indices=(0,),
+        )
+    )
+    payload["rejected_indices"] = ["0"]
+    with pytest.raises(NnslerContractError) as exc:
+        types.validation_result_from_dict(payload)
+    assert exc.value.reason_code == ReasonCode.INVALID_NUMERIC_TYPE
+
+
+# ---------------------------------------------------------------------------
+# [nnslr-t1] Fix C: detection must reference the EXACT batch frame
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("field,alt", [
+    ("capture_mono_ns", CAPTURE_NS + 1),
+    ("capture_reference", "eof"),
+    ("native_width", 640),
+    ("native_height", 480),
+    ("preprocessing_identity", "letterbox-3"),
+])
+def test_detection_frame_field_mismatch_is_clock_domain_violation(field, alt) -> None:
+    frame = make_frame()
+    batch = make_batch(frame)
+    payload = types.batch_to_dict(batch)
+    payload["detections"][0]["frame"][field] = alt
+    det_frame = types.frame_ref_from_dict(payload["detections"][0]["frame"])
+    assert det_frame != frame
+    codes = types._validate_frame_ref(det_frame, frame)
+    assert codes == (ReasonCode.INVALID_CLOCK_DOMAIN,)
+
+
+def test_detection_identity_mismatch_is_clock_domain_violation() -> None:
+    frame = make_frame()
+    other = make_frame(session="other")
+    codes = types._validate_frame_ref(other, frame)
+    assert codes == (ReasonCode.INVALID_CLOCK_DOMAIN,)
+
+
+def test_matching_frame_ref_passes() -> None:
+    frame = make_frame()
+    assert types._validate_frame_ref(frame, frame) == ()
+
+
+# ---------------------------------------------------------------------------
+# [nnslr-t1] Fix D: linked panels obey the same geometry rules as the bbox
+# ---------------------------------------------------------------------------
+
+def _det_with_panels(frame: FrameRef, panels: tuple) -> Detection:
+    return Detection(
+        frame=frame,
+        bbox_xyxy=(100.0, 100.0, 300.0, 380.0),
+        sign_family=SignFamily.MAX_SPEED,
+        value_state=ValueState.VALUE,
+        value_kph=50,
+        linked_panel_boxes=panels,
+        detection_score=0.9,
+        classification_score=0.9,
+        supported_domain=True,
+        observation_id="",
+    )
+
+
+def test_valid_linked_panel_is_accepted() -> None:
+    frame = make_frame()
+    det = _det_with_panels(frame, ((320.0, 100.0, 520.0, 380.0),))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert result.accepted
+
+
+def test_linked_panel_out_of_bounds_is_rejected() -> None:
+    frame = make_frame()
+    det = _det_with_panels(frame, ((100.0, 100.0, frame.native_width + 5.0, 380.0),))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_BOX_OUT_OF_BOUNDS in result.reason_codes
+
+
+def test_linked_panel_degenerate_is_rejected() -> None:
+    frame = make_frame()
+    det = _det_with_panels(frame, ((100.0, 100.0, 100.0, 380.0),))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_BOX_DEGENERATE in result.reason_codes
+
+
+def test_linked_panel_nonfinite_is_rejected() -> None:
+    frame = make_frame()
+    det = _det_with_panels(frame, ((float("nan"), 100.0, 520.0, 380.0),))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_BOX_DEGENERATE in result.reason_codes
+
+
+# ---------------------------------------------------------------------------
+# [nnslr-t1] Fix E: non-finite scores are tested programmatically (the JSON
+# fixtures stay RFC 8259-valid; NaN/inf are in-process values, not documents)
+# ---------------------------------------------------------------------------
+
+def test_nan_score_is_rejected() -> None:
+    frame = make_frame()
+    det = make_det(frame, score=float("nan"))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_NONFINITE_SCORE in result.reason_codes
+
+
+def test_inf_score_is_rejected() -> None:
+    frame = make_frame()
+    det = make_det(frame, score=float("inf"))
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_NONFINITE_SCORE in result.reason_codes
+
+
+def test_negative_score_is_rejected_as_range() -> None:
+    frame = make_frame()
+    det = make_det(frame, score=-0.1)
+    result = types.validate_batch(
+        make_batch(frame, (det,)), now_mono_ns=NOW_NS, expected_session_id="s1"
+    )
+    assert not result.accepted
+    assert ReasonCode.INVALID_SCORE_RANGE in result.reason_codes
+
+
+def test_all_json_fixtures_are_rfc_valid() -> None:
+    # json.loads accepts NaN/Infinity (Python extension); a strict RFC 8259
+    # parse must succeed on every shipped fixture.
+    import json.decoder
+
+    fixtures = Path(__file__).resolve().parents[2] / "src" / "nnslr_tools" / "fixtures"
+    for path in sorted(fixtures.glob("*.json")):
+        text = path.read_text(encoding="utf-8")
+
+        def _strict_const(c: str) -> float:
+            raise ValueError(f"non-RFC JSON constant {c!r} in {path.name}")
+
+        json.loads(text, parse_constant=_strict_const)
