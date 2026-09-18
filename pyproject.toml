@@ -39,8 +39,12 @@ where = ["src"]
 
 # The synthetic fixtures are package data: `nnslr selftest` must work from an
 # editable and a wheel install alike, not only from a full repo checkout.
+# [nnslr-t2] - START
+# T1 fixtures (top level) are iterated by `nnslr selftest`; T2 fixtures
+# (fixtures/t2/) are iterated by the manifest/align command and the T2 tests.
+# [nnslr-t2] - END
 [tool.setuptools.package-data]
-"nnslr_tools" = ["fixtures/*.json"]
+"nnslr_tools" = ["fixtures/*.json", "fixtures/t2/*.json"]
 "speed_vision_core" = ["py.typed"]
 
 [tool.pytest.ini_options]
