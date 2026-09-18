@@ -736,6 +736,41 @@ def _enum_value(v: Enum) -> str:
     return v.value
 
 
+# [nnslr-t1] - START  (strict numeric deserialization: no silent coercion)
+def _strict_int(value: Any, field: str) -> int:
+    """Deserialize an integer contract field with NO silent normalization.
+
+    Only a real ``int`` is accepted. ``bool`` is a subclass of ``int`` but is
+    rejected explicitly; integral floats (``50.0``), non-integral floats
+    (``50.9``), strings (``"50"``) and every other type are rejected with a
+    deterministic :class:`NnslerContractError` carrying
+    :attr:`ReasonCode.INVALID_NUMERIC_TYPE` (plan §7.2: external payloads are
+    validated, never coerced).
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise NnslerContractError(
+            ReasonCode.INVALID_NUMERIC_TYPE,
+            f"{field} must be an integer, got {type(value).__name__}: {value!r}",
+        )
+    return value
+
+
+def _strict_float(value: Any, field: str) -> float:
+    """Deserialize a float contract field with NO silent normalization.
+
+    Accepts ``int`` (safe widening) and ``float`` (including NaN/inf, which
+    downstream validation must then reject as non-finite). Rejects ``bool``,
+    strings and every other type deterministically.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise NnslerContractError(
+            ReasonCode.INVALID_NUMERIC_TYPE,
+            f"{field} must be a number, got {type(value).__name__}: {value!r}",
+        )
+    return float(value)
+# [nnslr-t1] - END
+
+
 def frame_ref_to_dict(ref: FrameRef) -> dict[str, Any]:
     return {
         "session_id": ref.session_id,
