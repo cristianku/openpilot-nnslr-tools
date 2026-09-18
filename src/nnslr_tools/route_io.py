@@ -13,6 +13,7 @@ from nnslr_tools.manifest import (
     RouteManifest,
     SegmentStatus,
     classify_filekind,
+    parse_route_id,
     normalize_relpath,
     sha256_of,
 )
@@ -25,6 +26,8 @@ def discover_segment_dirs(path: Path) -> list[tuple[RouteIdentity, Path]]:
         raise NnslerManifestError("route_path_not_directory", str(path))
 
     found: list[tuple[RouteIdentity, Path]] = []
+
+    # Layout A (loggerd/native copy): <root>/<route_id>--<segment>/
     candidates = [path, *sorted(p for p in path.iterdir() if p.is_dir())]
     for candidate in candidates:
         try:
@@ -32,6 +35,17 @@ def discover_segment_dirs(path: Path) -> list[tuple[RouteIdentity, Path]]:
         except NnslerManifestError:
             continue
         found.append((ident, candidate))
+
+    # Layout B (organized data root): <root>/<route_id>/<segment>/
+    # where segment directories are numeric.
+    try:
+        parse_route_id(path.name)
+        route_id = path.name
+    except NnslerManifestError:
+        route_id = None
+    if route_id is not None:
+        for candidate in sorted(p for p in path.iterdir() if p.is_dir() and p.name.isdigit()):
+            found.append((RouteIdentity.from_route(route_id, int(candidate.name)), candidate))
 
     if not found:
         raise NnslerManifestError("no_segment_directories", str(path))
