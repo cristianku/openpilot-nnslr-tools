@@ -35,6 +35,18 @@ requirements/              CPU dependency lock (empty while stdlib-only).
 
 ---
 
+## Installation on Proxmox GPU container
+
+For a Debian/Ubuntu Proxmox container with NVIDIA passthrough already working
+(`nvidia-smi` succeeds), see:
+
+- [docs/proxmox-gpu-container.md](docs/proxmox-gpu-container.md)
+
+It covers cloning NNSLR, ffmpeg/ffprobe, the local qlog/rlog parser environment,
+the data-root layout, and the V100-compatible PyTorch CUDA 12.6 environment.
+
+---
+
 ## Quickstart (CPU, clean clone)
 
 No GPU, no model, no data. The whole T1 surface runs on the standard library.
