@@ -37,6 +37,12 @@ Homepage = "https://github.com/cristianku/openpilot-nnslr-tools"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The synthetic fixtures are package data: `nnslr selftest` must work from an
+# editable and a wheel install alike, not only from a full repo checkout.
+[tool.setuptools.package-data]
+"nnslr_tools" = ["fixtures/*.json"]
+"speed_vision_core" = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
