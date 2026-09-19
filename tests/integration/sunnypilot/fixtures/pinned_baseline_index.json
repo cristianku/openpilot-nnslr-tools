@@ -1,0 +1,15 @@
+{
+  "repository": "cristianku/sunnypilot",
+  "commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56",
+  "files": [
+    {"path": "openpilot/cereal/custom.capnp", "anchors": ["struct CarStateSP", "struct LiveMapDataSP", "struct LongitudinalPlanSP"]},
+    {"path": "openpilot/cereal/log.capnp", "anchors": ["carStateSP @114", "liveMapDataSP @115", "customReserved10 @136"]},
+    {"path": "openpilot/cereal/services.py", "anchors": ["\"carStateSP\"", "\"liveMapDataSP\"", "\"modelDataV2SP\""]},
+    {"path": "openpilot/system/manager/process_config.py", "anchors": ["procs = [", "PythonProcess(\"modeld\"", "procs += ["]},
+    {"path": "openpilot/selfdrive/ui/sunnypilot/ui_state.py", "anchors": ["self.sm_services_ext", "\"carStateSP\"", "\"liveMapDataSP\""]},
+    {"path": "openpilot/selfdrive/ui/sunnypilot/onroad/speed_limit.py", "anchors": ["class SpeedLimitRenderer", "longitudinalPlanSP", "liveMapDataSP"]},
+    {"path": "openpilot/selfdrive/modeld/modeld.py", "anchors": ["# visionipc clients", "VisionIpcClient(\"camerad\""]},
+    {"path": "openpilot/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py", "anchors": ["class SpeedLimitResolver", "_get_from_car_state", "_get_from_map_data"]},
+    {"path": ".gitmodules", "anchors": ["sunnypilot/neural_network_data", "https://github.com/sunnypilot/neural-network-data.git"]}
+  ]
+}
