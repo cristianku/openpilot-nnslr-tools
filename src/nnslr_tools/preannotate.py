@@ -19,6 +19,7 @@ from pathlib import Path
 
 from nnslr_tools.manifest import parse_route_id, sha256_of
 from nnslr_tools.sync import DEFAULT_DATA_ROOT
+from nnslr_tools.road_text import ROAD_MODEL_INFO, OCR_INFO
 
 MODEL_ID = 'star092304/traffic-sign-detection-vietnam-yolo'
 MODEL_REVISION = '58719e5c03bf5fa2817b59f9c7c3c385d3e92c9d'
@@ -92,8 +93,8 @@ def model_path(root: Path) -> Path:
     return _inside(root, root / 'models/preannotation' / MODEL_SHA256 / 'model.onnx')
 
 
-def _open_download():
-    request = urllib.request.Request(MODEL_URL, headers={'User-Agent': 'nnslr-tools'})
+def _open_download(url=MODEL_URL):
+    request = urllib.request.Request(url, headers={'User-Agent': 'nnslr-tools'})
     try:
         return urllib.request.urlopen(request, timeout=60)
     except urllib.error.URLError as exc:
@@ -106,21 +107,30 @@ def _open_download():
 
 
 def ensure_model(root: Path) -> Path:
-    path = model_path(root)
+    return _ensure_asset(model_path(root), MODEL_SHA256, MODEL_ID, _open_download)
+
+
+def ensure_road_model(root: Path) -> Path:
+    info = ROAD_MODEL_INFO
+    path = _inside(root, root / "models/preannotation" / info["sha256"] / "model.onnx")
+    return _ensure_asset(path, info["sha256"], info["repository"], lambda: _open_download(info["url"]))
+
+
+def _ensure_asset(path, checksum, repository, opener):
     if path.exists():
-        if sha256_of(path) != MODEL_SHA256:
+        if sha256_of(path) != checksum:
             raise PreannotationError(f'model checksum mismatch: {path}; remove only this cached model and retry')
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
-    print(f'Downloading pretrained ONNX model (37 MiB): {MODEL_ID}', file=sys.stderr, flush=True)
+    print(f'Downloading pretrained ONNX model: {repository}', file=sys.stderr, flush=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.download-', delete=False) as target:
             temporary = Path(target.name)
-            with _open_download() as source:
+            with opener() as source:
                 while chunk := source.read(1024*1024):
                     target.write(chunk)
-        if sha256_of(temporary) != MODEL_SHA256:
+        if sha256_of(temporary) != checksum:
             raise PreannotationError('downloaded model checksum mismatch')
         temporary.replace(path)
     except (OSError, urllib.error.URLError) as exc:
@@ -179,16 +189,18 @@ def run_preannotation(route: str, *, data_root: Path | None = None, confidence: 
     root=resolve_data_root(data_root)
     frames=discover_frames(root,route)
     python=python_executable or sys.executable
-    check=subprocess.run([python,'-c','import numpy, PIL, onnxruntime'],capture_output=True,text=True)
+    check=subprocess.run([python,'-c','import numpy, PIL, onnxruntime, rapidocr'],capture_output=True,text=True)
     if check.returncode:
         raise PreannotationError('preannotation dependencies missing; in the nnslr environment run: python -m pip install ".[preannotate]"')
     model=ensure_model(root)
+    road_model=ensure_road_model(root)
     base=_inside(root,root/'derived/preannotations'/route)
     base.mkdir(parents=True,exist_ok=True)
     run_id=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]
     pending=base/('.pending-'+run_id); pending.mkdir()
     request={'schema_version':1,'run_id':run_id,'route_id':route,'data_root':str(root),'model_path':str(model),
-             'model':MODEL_INFO,'confidence':confidence,'frames':frames,'output':str(pending)}
+             'model':MODEL_INFO,'road_model_path':str(road_model),'road_model':ROAD_MODEL_INFO,
+             'ocr':OCR_INFO,'confidence':confidence,'frames':frames,'output':str(pending)}
     request_path=pending/'request.json'; request_path.write_text(json.dumps(request,allow_nan=False))
     proc=subprocess.run([python,'-m','nnslr_tools._preannotate_worker',str(request_path)],capture_output=False)
     if proc.returncode:
@@ -200,10 +212,12 @@ def run_preannotation(route: str, *, data_root: Path | None = None, confidence: 
     from nnslr_tools.review import write_review
     write_review(pending, rows, run_id)
     summary={'schema_version':1,'run_id':run_id,'route_id':route,'model':MODEL_INFO,
+             'road_model':ROAD_MODEL_INFO,'ocr':OCR_INFO,
              'confidence':confidence,'device':'cpu','frame_count':len(rows),
              'frames_with_proposals':sum(bool(r['detections']) for r in rows),
              'proposal_count':sum(len(r['detections']) for r in rows),
              'speed_proposal_count':sum(d['family']=='maximum_speed' for r in rows for d in r['detections']),
+             'road_marking_proposal_count':sum(d['family']=='road_marking_candidate' for r in rows for d in r['detections']),
              'review_state':'pending','ground_truth':False,'capture_time_established':False}
     (pending/'run.json').write_text(json.dumps(summary,indent=2,allow_nan=False))
     destination=base/run_id; pending.rename(destination)

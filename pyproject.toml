@@ -31,7 +31,7 @@ cpu-test = []
 # Only the isolated log-reading interpreter needs these optional dependencies.
 log-reader = ["pycapnp>=2.0,<3", "zstandard>=0.22,<1"]
 # [preannotation] - START
-preannotate = ["onnxruntime>=1.20,<2", "Pillow>=11,<13", "numpy>=1.26,<3"]
+preannotate = ["onnxruntime>=1.20,<2", "Pillow>=11,<13", "numpy>=1.26,<3", "rapidocr==3.4.0"]
 # [preannotation] - END
 # [schema-reader] - END
 

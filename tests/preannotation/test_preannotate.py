@@ -136,6 +136,7 @@ def test_incomplete_worker_keeps_previous_report(tmp_path,monkeypatch):
     previous='{"run_id":"previous"}'
     (base/'latest.json').write_text(previous)
     monkeypatch.setattr('nnslr_tools.preannotate.ensure_model',lambda root:root/'model.onnx')
+    monkeypatch.setattr('nnslr_tools.preannotate.ensure_road_model',lambda root:root/'road.onnx')
     def child(args,**kwargs):
         return subprocess.CompletedProcess(args,0 if '-c' in args else 1,'','')
     monkeypatch.setattr('nnslr_tools.preannotate.subprocess.run',child)
@@ -152,3 +153,54 @@ def test_report_escapes_embedded_json_and_is_self_contained(tmp_path):
     assert '__NNSLR_DATA__' not in text
     assert 'https://' not in text
 # [preannotation] - END
+
+# [road-text] - START
+def test_road_text_proposal_maps_stretched_ocr_back_to_native_pixels():
+    from nnslr_tools.road_text import road_text_proposals
+    result=[[[[654,316],[726,316],[726,348],[654,348]],'30',.983]]
+    proposal=road_text_proposals(result, width=1344, height=760, road_mask=[[True]*1344 for _ in range(760)])[0]
+    assert proposal['bbox_xyxy']==pytest.approx([654,485.333333,726,496])
+    assert proposal['value_kph']==30
+    assert proposal['family']=='road_marking_candidate'
+    assert proposal['evidence_source']=='ocr_lower_half_stretch3'
+    assert proposal['applicability']=='unresolved'
+    assert proposal['review_state']=='pending'
+
+
+def test_ocr_does_not_promote_plates_text_or_low_confidence_to_speed():
+    from nnslr_tools.road_text import road_text_proposals
+    box=[[100,100],[200,100],[200,140],[100,140]]
+    for text,score in [('AG-108816',.99),('ZONE30',.99),('0',.99),('1234',.99),('30',.5),('O',.99),(' 30x',.99)]:
+        assert road_text_proposals([[box,text,score]],width=1344,height=760,road_mask=[[True]*1344 for _ in range(760)])==[]
+    assert road_text_proposals([[box,'50',.95]],width=1344,height=760,road_mask=[[True]*1344 for _ in range(760)])[0]['value_kph']==50
+# [road-text] - END
+
+# [road-text] - START
+def test_numeric_text_on_wall_advertisement_or_unknown_surface_is_rejected():
+    from nnslr_tools.road_text import road_text_proposals
+    box=[[40,30],[80,30],[80,60],[40,60]]
+    reading=[[box,'30',.999]]
+    for surface in (None, [[False]*200 for _ in range(100)]):
+        assert road_text_proposals(reading,width=200,height=100,road_mask=surface)==[]
+    # A center pixel on road is insufficient: the whole box and its context matter.
+    mask=[[False]*200 for _ in range(100)]
+    mask[65][60]=True
+    assert road_text_proposals(reading,width=200,height=100,road_mask=mask)==[]
+    mask=[[True]*200 for _ in range(100)]
+    assert len(road_text_proposals(reading,width=200,height=100,road_mask=mask))==1
+
+
+def test_road_text_rejects_invalid_boxes_and_uses_context_outside_text():
+    from nnslr_tools.road_text import road_text_proposals
+    mask=[[False]*200 for _ in range(100)]
+    for y in range(60,70):
+        for x in range(40,80):
+            mask[y][x]=True
+    box=[[40,30],[80,30],[80,60],[40,60]]
+    assert road_text_proposals([[box,'30',.99]],width=200,height=100,road_mask=mask)==[]
+    mask=[[True]*200 for _ in range(100)]
+    for bad in ([[float('nan'),30],[80,30],[80,60],[40,60]],
+                [[-1,30],[80,30],[80,60],[40,60]],
+                [[40,30],[40,30],[40,30],[40,30]]):
+        assert road_text_proposals([[bad,'30',.99]],width=200,height=100,road_mask=mask)==[]
+# [road-text] - END

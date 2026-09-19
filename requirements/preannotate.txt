@@ -3,4 +3,5 @@
 onnxruntime>=1.20,<2
 Pillow>=11,<13
 numpy>=1.26,<3
+rapidocr==3.4.0
 # [preannotation] - END
