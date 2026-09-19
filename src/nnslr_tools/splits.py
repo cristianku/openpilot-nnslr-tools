@@ -43,6 +43,14 @@ def validate_splits(rows: list[dict], split: dict, dataset_sha256: str) -> list[
     if not isinstance(split, dict) or split.get('schema_version') != 1 or not isinstance(split.get('assignments'), dict):
         return [{'reason': 'invalid_split_schema'}]
     assignments = split['assignments']
+    # [model-review] - START
+    split_kind = split.get('dataset_kind', 'gold')
+    if split_kind not in ('gold', 'training-candidate'):
+        return [{'reason': 'unknown_dataset_kind', 'detail': str(split_kind)}]
+    model_rows = [r for r in rows if isinstance(r.get('provenance'), dict) and r['provenance'].get('label_basis') == 'model_review']
+    if split_kind == 'gold' and model_rows:
+        return [{'reason': 'split_kind_mismatch', 'detail': 'gold split cannot cover model-reviewed rows'}]
+    # [model-review] - END
     expected = {r['annotation_id'] for r in rows if r['review_state'] in ('accepted','corrected')}
     if set(assignments) != expected or any(not isinstance(s,str) or s not in SPLITS for s in assignments.values()):
         return [{'reason': 'invalid_split_membership'}]
@@ -55,8 +63,11 @@ def validate_splits(rows: list[dict], split: dict, dataset_sha256: str) -> list[
     return errors
 
 
-def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | None = None) -> dict:
-    report = validate_dataset(rows, root)
+def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | None = None,
+                 dataset_kind: str = 'gold') -> dict:
+    # [model-review] - START
+    report = validate_dataset(rows, root, dataset_kind=dataset_kind)
+    # [model-review] - END
     require(report['valid'], 'invalid_dataset', json.dumps(report['errors']))
     groups = connected_groups(rows)
     require(len(groups) >= len(SPLITS), 'insufficient_independent_groups',
@@ -78,7 +89,10 @@ def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | 
     for index, group in enumerate(groups):
         split = 'validation' if index < evaluation_count else 'test' if index < evaluation_count * 2 else 'train'
         assignments.update({r['annotation_id']: split for r in group})
-    payload = {'schema_version': 1, 'dataset_sha256': report['dataset_sha256'], 'seed': seed,
+    # [model-review] - START
+    base = root / 'datasets' / 'training_candidate_dataset' if dataset_kind == 'training-candidate' else root
+    payload = {'schema_version': 1, 'dataset_kind': dataset_kind, 'dataset_sha256': report['dataset_sha256'], 'seed': seed,
+    # [model-review] - END
                'grouping': ['route_id', 'site_group', 'encounter_id', 'image_sha256'],
                'assignments': dict(sorted(assignments.items())),
                'excluded_rejected_ids': sorted(r['annotation_id'] for r in rows if r['review_state'] == 'rejected'),
@@ -89,14 +103,18 @@ def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | 
     require(not errors, 'split_leakage', json.dumps(errors))
     content = (json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
     digest = hashlib.sha256(content).hexdigest()
-    target = output if output is not None else root / 'splits' / (digest + '.json')
+    # [model-review] - START
+    target = output if output is not None else base / 'splits' / (digest + '.json')
+    # [model-review] - END
     if target.exists():
         require(target.read_bytes() == content, 'immutable_split_conflict', str(target))
     else:
         atomic_write(target, content)
-    atomic_write(root / 'splits/latest.json', (json.dumps({'path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
+    # [model-review] - START
+    atomic_write(base / 'splits/latest.json', (json.dumps({'path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
                                                        'sha256': digest}, sort_keys=True) + '\n').encode())
-    return {'valid': True, 'dataset_sha256': report['dataset_sha256'], 'split_sha256': digest,
+    # [model-review] - END
+    return {'valid': True, 'dataset_kind': dataset_kind, 'dataset_sha256': report['dataset_sha256'], 'split_sha256': digest,
             'split_path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
             'counts': payload['counts'], 'warnings': report['warnings']}
 # [reviewed-dataset] - END

@@ -825,20 +825,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_import = sub.add_parser("import-annotations", help="import explicitly reviewed annotations into the canonical dataset")
     p_import.add_argument("inputs", nargs="*", help="review JSONL files; default: <data-root>/annotations/inbox/*.jsonl")
     p_import.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
-    p_import.add_argument("--output", help="default: <data-root>/annotations/objects.jsonl")
+    # [model-review] - START
+    p_import.add_argument("--output", help="default: gold <data-root>/annotations/objects.jsonl; training-candidate <data-root>/datasets/training_candidate_dataset/objects.jsonl")
+    # [model-review] - END
     p_import.set_defaults(func=_cmd_dataset)
     p_validate = sub.add_parser("validate-dataset", help="validate reviewed labels, images, hashes and capture provenance")
-    p_validate.add_argument("dataset", nargs="?", help="default: <data-root>/annotations/objects.jsonl")
+    # [model-review] - START
+    p_validate.add_argument("dataset", nargs="?", help="default: gold <data-root>/annotations/objects.jsonl; training-candidate <data-root>/datasets/training_candidate_dataset/objects.jsonl")
+    # [model-review] - END
     p_validate.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
     p_validate.add_argument("--splits", help="also check a frozen split for leakage and dataset identity")
     p_validate.set_defaults(func=_cmd_dataset)
     p_splits = sub.add_parser("build-splits", help="freeze deterministic route/site-connected dataset partitions")
-    p_splits.add_argument("dataset", nargs="?", help="default: <data-root>/annotations/objects.jsonl")
+    # [model-review] - START
+    p_splits.add_argument("dataset", nargs="?", help="default: gold <data-root>/annotations/objects.jsonl; training-candidate <data-root>/datasets/training_candidate_dataset/objects.jsonl")
+    # [model-review] - END
     p_splits.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
     p_splits.add_argument("--seed", type=int, default=0)
     p_splits.add_argument("--output", help="default: <data-root>/splits/<sha256>.json (immutable)")
     p_splits.set_defaults(func=_cmd_dataset)
     # [reviewed-dataset] - END
+    # [model-review] - START
+    for _parser in (p_import, p_validate, p_splits):
+        _parser.add_argument("--dataset-kind", choices=("gold", "training-candidate"), default="gold",
+                             help="gold: human review only; training-candidate: human + model review (default: gold)")
+    # [model-review] - END
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
         p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
@@ -851,19 +862,33 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
     from nnslr_tools.annotations import import_reviews, load_jsonl, validate_dataset
     from nnslr_tools.preannotate import resolve_data_root
     root = resolve_data_root(Path(args.data_root) if args.data_root else None)
+    # [model-review] - START
+    kind = args.dataset_kind
+    default_dataset = (root / "datasets" / "training_candidate_dataset" / "objects.jsonl"
+                       if kind == "training-candidate" else root / "annotations" / "objects.jsonl")
+    # [model-review] - END
     try:
         if hasattr(args, "inputs"):
             inputs = [Path(p) for p in args.inputs] if args.inputs else sorted((root / "annotations/inbox").glob("*.jsonl"))
-            output = Path(args.output) if args.output else root / "annotations/objects.jsonl"
-            report = import_reviews(inputs, root, output)
+            # [model-review] - START
+            output = Path(args.output) if args.output else default_dataset
+            report = import_reviews(inputs, root, output, dataset_kind=kind)
+            # [model-review] - END
         else:
-            dataset = Path(args.dataset) if args.dataset else root / "annotations/objects.jsonl"
+            # [model-review] - START
+            dataset = Path(args.dataset) if args.dataset else default_dataset
+            # [model-review] - END
             rows = load_jsonl(dataset)
             if hasattr(args, "seed"):
                 from nnslr_tools.splits import build_splits
-                report = build_splits(rows, root, seed=args.seed, output=Path(args.output) if args.output else None)
+                # [model-review] - START
+                report = build_splits(rows, root, seed=args.seed, output=Path(args.output) if args.output else None,
+                                      dataset_kind=kind)
+                # [model-review] - END
             else:
-                report = validate_dataset(rows, root)
+                # [model-review] - START
+                report = validate_dataset(rows, root, dataset_kind=kind)
+                # [model-review] - END
                 if args.splits and report["valid"]:
                     from nnslr_tools.splits import validate_splits
                     report["errors"].extend(validate_splits(rows, json.loads(Path(args.splits).read_text()), report["dataset_sha256"]))

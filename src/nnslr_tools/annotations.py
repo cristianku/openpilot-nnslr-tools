@@ -16,6 +16,10 @@ from nnslr_tools.media import MediaToolError, png_dimensions
 from speed_vision_core.types import MIN_VALUE_KPH, MAX_VALUE_KPH
 
 SCHEMA_VERSION = 1
+# [model-review] - START
+MODEL_SCHEMA_VERSION = 2
+DATASET_KINDS = ('gold', 'training-candidate')
+# [model-review] - END
 ENUMS = {
     "sign_family": {"maximum_speed", "cancellation", "zone", "variable_display", "other_sign", "not_a_sign", "unreadable", "road_marking"},
     "value_state": {"read", "unreadable", "unknown", "not_applicable"},
@@ -103,9 +107,19 @@ def frame_identity(row: dict) -> tuple:
     return row['route_id'], row['segment_index'], row['camera_stream'], index
 
 
-def validate_annotation(row: dict, root: Path) -> None:
+def validate_annotation(row: dict, root: Path, *, dataset_kind: str = 'gold') -> None:
+    # [model-review] - START
+    require(dataset_kind in DATASET_KINDS, 'unknown_dataset_kind', str(dataset_kind))
+    # [model-review] - END
     require(set(row) == FIELDS, "invalid_schema", f"missing={sorted(FIELDS-set(row))}, unknown={sorted(set(row)-FIELDS)}")
-    require(type(row['schema_version']) is int and row['schema_version'] == SCHEMA_VERSION, "invalid_schema_version")
+    # [model-review] - START
+    model = isinstance(row.get('provenance'), dict) and row['provenance'].get('label_basis') == 'model_review'
+    if model:
+        require(dataset_kind == 'training-candidate', 'model_review_not_gold', 'model review is training-candidate only')
+        require(type(row['schema_version']) is int and row['schema_version'] == MODEL_SCHEMA_VERSION, 'invalid_schema_version')
+    else:
+        require(type(row['schema_version']) is int and row['schema_version'] == SCHEMA_VERSION, 'invalid_schema_version')
+    # [model-review] - END
     for field, values in ENUMS.items():
         require(isinstance(row[field], str) and row[field] in values, "unknown_enum", field)
     require(row['review_state'] != 'pending', "unreviewed_proposal")
@@ -131,9 +145,23 @@ def validate_annotation(row: dict, root: Path) -> None:
     require(_hash(row['image_sha256']), "missing_provenance", "image_sha256")
     for field in ('source_video_sha256', 'source_log_sha256'):
         require(row[field] is None or _hash(row[field]), "missing_provenance", field)
+    # [model-review] - START
     provenance = row['provenance']
-    require(isinstance(provenance, dict) and _hash(provenance.get('source_review_sha256'))
-            and provenance.get('label_basis') == 'human_review', "missing_provenance", "review source")
+    if model:
+        require(isinstance(provenance, dict) and _hash(provenance.get('source_review_sha256')),
+                "missing_provenance", "review source")
+        for field in ('review_model', 'review_model_version'):
+            require(isinstance(provenance.get(field), str) and bool(provenance[field].strip()),
+                    "missing_provenance", field)
+        require(_hash(provenance.get('review_model_sha256')), "missing_provenance", "review_model_sha256")
+        confidence = provenance.get('confidence')
+        require(type(confidence) in (int, float) and not isinstance(confidence, bool) and math.isfinite(confidence)
+                and 0 <= confidence <= 1, "invalid_confidence", str(confidence))
+        require(row['reviewer'] == 'codex/' + provenance['review_model'], "reviewer_model_mismatch", row['reviewer'])
+    else:
+        require(isinstance(provenance, dict) and _hash(provenance.get('source_review_sha256'))
+                and provenance.get('label_basis') == 'human_review', "missing_provenance", "review source")
+    # [model-review] - END
     require(row['decoded_frame_index'] is None or row['source_video_sha256'] is not None,
             "missing_provenance", "decoded index needs source video hash")
     capture = row['capture_mono_ns']
@@ -173,13 +201,16 @@ def validate_annotation(row: dict, root: Path) -> None:
     require(dimensions == (row['width'], row['height']), 'image_dimensions_mismatch', row['image_path'])
 
 
-def validate_dataset(rows: list[dict], root: Path) -> dict:
+def validate_dataset(rows: list[dict], root: Path, *, dataset_kind: str = 'gold') -> dict:
+    # [model-review] - START
+    require(dataset_kind in DATASET_KINDS, 'unknown_dataset_kind', str(dataset_kind))
+    # [model-review] - END
     errors = []
     seen, boxes, frames = set(), set(), {}
     negative_frames, object_frames = set(), set()
     for line, row in enumerate(rows, 1):
         try:
-            validate_annotation(row, root)
+            validate_annotation(row, root, dataset_kind=dataset_kind)
             require(row['annotation_id'] not in seen, 'duplicate_identity', row['annotation_id'])
             seen.add(row['annotation_id'])
             identity = frame_identity(row)
@@ -210,7 +241,10 @@ def validate_dataset(rows: list[dict], root: Path) -> dict:
         clocks[key] = capture
     if not rows:
         errors.append({'reason': 'empty_dataset', 'detail': 'no reviewed annotations'})
-    return {'schema_version': SCHEMA_VERSION, 'valid': not errors, 'annotation_count': len(rows),
+    # [model-review] - START
+    return {'schema_version': SCHEMA_VERSION, 'dataset_kind': dataset_kind, 'valid': not errors,
+    # [model-review] - END
+            'annotation_count': len(rows),
             'frame_count': len(frames), 'timing_eligible_count': sum(r.get('alignment_status') == 'exact' and r.get('review_state') in ('accepted','corrected') for r in rows),
             'errors': errors, 'dataset_sha256': hashlib.sha256(jsonl_bytes(rows)).hexdigest(),
             'warnings': ['site/encounter groups are incomplete; repeated physical sites across routes need human grouping']
@@ -232,8 +266,16 @@ def _canonical(frame: dict, detection: dict | None, original: dict | None, sourc
     require(isinstance(object_id, str) and bool(object_id), 'missing_provenance', 'detection_id')
     frame_key = {k: frame.get(k) for k in ('route_id','segment_index','camera_stream','output_index','decoded_frame_index')}
     identity = [*frame_identity(frame_key), object_id]
+    # [model-review] - START
+    model = frame.get('label_basis') == 'model_review'
+    provenance = {'label_basis': 'model_review' if model else 'human_review', 'source_review_sha256': source_hash,
+                  'original_proposal': original, 'source_model': frame.get('model'), 'run_id': frame.get('run_id')}
+    if model:
+        provenance.update({k: frame[k] for k in ('review_model', 'review_model_version', 'review_model_sha256', 'confidence')})
+    # [model-review] - END
     return {
-        'schema_version': SCHEMA_VERSION, 'annotation_id': hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
+        'schema_version': MODEL_SCHEMA_VERSION if model else SCHEMA_VERSION,
+        'annotation_id': hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
         **{k: frame.get(k) for k in ('route_id','segment_index','output_index','decoded_frame_index','capture_mono_ns','camera_stream',
                                      'image_path','width','height','reviewer','review_timestamp','source_video_sha256','source_log_sha256','site_group','encounter_id')},
         'image_sha256': frame.get('frame_sha256'), 'bbox_xyxy': d.get('bbox_xyxy'), 'sign_family': family,
@@ -247,12 +289,14 @@ def _canonical(frame: dict, detection: dict | None, original: dict | None, sourc
         'notes': d.get('notes', frame.get('notes', '')),
         'alignment_status': frame.get('alignment_status', 'unresolved'),
         'capture_time_provenance': frame.get('capture_time_provenance', 'unknown'),
-        'provenance': {'label_basis': 'human_review', 'source_review_sha256': source_hash,
-                       'original_proposal': original, 'source_model': frame.get('model'), 'run_id': frame.get('run_id')},
+        'provenance': provenance,
     }
 
 
-def import_reviews(inputs: list[Path], root: Path, output: Path) -> dict:
+def import_reviews(inputs: list[Path], root: Path, output: Path, *, dataset_kind: str = 'gold') -> dict:
+    # [model-review] - START
+    require(dataset_kind in DATASET_KINDS, 'unknown_dataset_kind', str(dataset_kind))
+    # [model-review] - END
     imported = []
     frame_ids = set()
     sources = []
@@ -264,8 +308,12 @@ def import_reviews(inputs: list[Path], root: Path, output: Path) -> dict:
             if 'annotation_id' in frame:
                 imported.append(frame)
                 continue
-            require(frame.get('kind') == 'reviewed_frame' and frame.get('review_state') == 'reviewed'
-                    and frame.get('label_basis') == 'human_review', 'unreviewed_proposal', path.name)
+            # [model-review] - START
+            require(frame.get('kind') == 'reviewed_frame' and frame.get('review_state') in ('reviewed', 'resolved')
+                    and frame.get('label_basis') in ('human_review', 'model_review'), 'unreviewed_proposal', path.name)
+            if frame.get('label_basis') == 'model_review':
+                require(dataset_kind == 'training-candidate', 'model_review_not_gold', path.name)
+            # [model-review] - END
             require(isinstance(frame.get('route_id'), str) and isinstance(frame.get('camera_stream'), str)
                     and _integer(frame.get('segment_index')) and _integer(frame.get('output_index')),
                     'invalid_identity', 'reviewed frame')
@@ -288,7 +336,9 @@ def import_reviews(inputs: list[Path], root: Path, output: Path) -> dict:
     require(bool(imported), 'empty_dataset', 'no annotations to import')
     existing = load_jsonl(output) if output.exists() else []
     combined = sorted(existing + imported, key=lambda r: str(r.get('annotation_id', '')))
-    report = validate_dataset(combined, root)
+    # [model-review] - START
+    report = validate_dataset(combined, root, dataset_kind=dataset_kind)
+    # [model-review] - END
     if not report['valid']:
         raise DatasetError(report['errors'][0]['reason'], json.dumps(report, sort_keys=True))
     # Preserve exact source reviews; failed validation never publishes dataset truth.
