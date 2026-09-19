@@ -175,3 +175,18 @@ def apply_patchset(run: PreparedRun, feature_repo: Path, lock: FeatureLock) -> A
     )
     _save(run, result)
     return result
+
+
+def load_apply_result(run: PreparedRun) -> ApplyResult:
+    path = _state_path(run)
+    if not path.is_file():
+        raise ApplyError(f"apply receipt not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return ApplyResult(
+        success=bool(payload.get("success")),
+        commit_mapping=tuple(CommitMapping(**row) for row in payload.get("commit_mapping", [])),
+        conflicts=tuple(ApplyConflict(**row) for row in payload.get("conflicts", [])),
+        result_tree=payload.get("result_tree"),
+        resumed=True,
+        added_commit_count=0,
+    )
