@@ -49,10 +49,14 @@ from nnslr_tools.comma_log import (
     read_log_metadata,
 )
 from nnslr_tools.media import MediaToolError, extract_frames, make_clip, probe_frame_timestamps, probe_video
-from nnslr_tools.manifest import NnslerManifestError, RouteManifest
-from nnslr_tools.route_io import build_route_manifest
+# [route-extract] - START
+from nnslr_tools.manifest import NnslerManifestError, RouteManifest, normalize_relpath, parse_route_id
+from nnslr_tools.route_io import build_route_manifest, discover_segment_dirs
+# [route-extract] - END
 # [nnslr-sync] - START
-from nnslr_tools.sync import sync_route
+# [route-extract] - START
+from nnslr_tools.sync import DEFAULT_DATA_ROOT, sync_route
+# [route-extract] - END
 # [nnslr-sync] - END
 
 
@@ -380,6 +384,12 @@ def _cmd_video_probe(args: argparse.Namespace) -> int:
 
 
 def _cmd_extract_frames(args: argparse.Namespace) -> int:
+    # [route-extract] - START
+    if args.route:
+        return _cmd_extract_route(args)
+    if not args.output:
+        raise ValueError("--output is required with --video")
+    # [route-extract] - END
     frames = extract_frames(
         Path(args.video),
         Path(args.output),
@@ -400,6 +410,61 @@ def _cmd_extract_frames(args: argparse.Namespace) -> int:
         "capture_time_established": False,
     }, indent=2, sort_keys=True))
     return 0
+
+
+# [route-extract] - START
+def _cmd_extract_route(args: argparse.Namespace) -> int:
+    """Apply the existing video extraction to every locally available segment."""
+    parse_route_id(args.route)
+    root = Path(args.data_root or os.environ.get("NNSLR_DATA_ROOT") or DEFAULT_DATA_ROOT).expanduser().resolve()
+    route_rel = Path("raw/routes") / args.route
+    normalize_relpath(root, route_rel)
+    segments = discover_segment_dirs(root / route_rel)
+    output = Path(args.output).expanduser() if args.output else root / "derived/frames" / args.route
+    if not args.output:
+        normalize_relpath(root, output.relative_to(root))
+
+    # Preflight the complete route so a missing camera or existing output in a
+    # later segment does not leave earlier segments unnecessarily processed.
+    plans = []
+    for identity, directory in segments:
+        if identity.route_id != args.route:
+            raise ValueError(f"unexpected route inside {root / route_rel}: {identity.route_id}")
+        video = directory / "fcamera.hevc"
+        normalize_relpath(root, video.relative_to(root))
+        if not video.is_file():
+            raise MediaToolError("video_not_found", str(video))
+        segment_output = output / str(identity.segment_index)
+        if not args.output:
+            normalize_relpath(root, segment_output.relative_to(root))
+        if not args.overwrite and next(segment_output.glob("frame_*.png"), None) is not None:
+            raise MediaToolError("output_not_empty", str(segment_output))
+        plans.append((identity.segment_index, video, segment_output))
+
+    all_rows = []
+    summaries = []
+    for index, video, segment_output in plans:
+        print(f"Extracting segment {index}: {video}", file=sys.stderr, flush=True)
+        frames = extract_frames(
+            video, segment_output, fps=None if args.all_frames else args.fps,
+            start_s=args.start, end_s=args.end, ffmpeg=args.ffmpeg, overwrite=args.overwrite,
+        )
+        rows = [dict(frame.to_dict(), route_id=args.route, segment_index=index,
+                     camera_stream="narrow_road") for frame in frames]
+        manifest = segment_output / "frames.jsonl"
+        _write_jsonl(manifest, rows)
+        all_rows.extend(rows)
+        summaries.append({"segment_index": index, "frame_count": len(rows),
+                          "output": str(segment_output), "manifest": str(manifest)})
+    if args.manifest:
+        _write_jsonl(Path(args.manifest), all_rows)
+    print(json.dumps({
+        "route": args.route, "frame_count": len(all_rows), "output": str(output),
+        "segments": summaries, "manifest": args.manifest,
+        "timing": "media_only", "capture_time_established": False,
+    }, indent=2, sort_keys=True))
+    return 0
+# [route-extract] - END
 
 
 def _cmd_log_metadata(args: argparse.Namespace) -> int:
@@ -651,14 +716,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_probe.set_defaults(func=_cmd_video_probe)
 
     p_extract = sub.add_parser("extract-frames", help="extract LOCAL video frames with ffmpeg")
-    p_extract.add_argument("--video", required=True)
-    p_extract.add_argument("--output", required=True)
+    # [route-extract] - START
+    extract_source = p_extract.add_mutually_exclusive_group(required=True)
+    extract_source.add_argument("--video", help="one local video; requires --output")
+    extract_source.add_argument("--route", help="automatically extract fcamera.hevc from every local segment of this route")
+    p_extract.add_argument("--data-root", help="with --route: NNSLR_DATA_ROOT or /srv/nnslr-data by default")
+    p_extract.add_argument("--output", help="with --route: defaults to <data-root>/derived/frames/<route>; required with --video")
+    # [route-extract] - END
     p_extract.add_argument("--fps", type=float, default=1.0, help="sampling FPS (default: 1 for broad discovery)")
     p_extract.add_argument("--all-frames", action="store_true", help="decode every frame instead of sampling")
     p_extract.add_argument("--start", type=float)
     p_extract.add_argument("--end", type=float)
     p_extract.add_argument("--ffmpeg")
-    p_extract.add_argument("--manifest")
+    # [route-extract] - START
+    p_extract.add_argument("--manifest", help="optional combined frame JSONL; --route also writes frames.jsonl in each segment directory")
+    # [route-extract] - END
     p_extract.add_argument("--overwrite", action="store_true")
     p_extract.set_defaults(func=_cmd_extract_frames)
 
