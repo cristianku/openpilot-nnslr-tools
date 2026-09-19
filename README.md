@@ -191,6 +191,55 @@ Dry-run contacts the host for inventory, but does not verify existing local
 content or transfer files.
 <!-- [nnslr-sync] - END -->
 
+<!-- [route-extract] - START -->
+## Extract images from a complete route
+
+Once a route has been downloaded, one command processes every available local
+segment automatically. No shell loop or segment list is needed:
+
+```sh
+nnslr extract-frames --route "$ROUTE"
+```
+
+Defaults are `fcamera.hevc` (front narrow road camera), one PNG per second at
+the original resolution, and `NNSLR_DATA_ROOT` or `/srv/nnslr-data` as the data
+root. Images and a `frames.jsonl` manifest are written for each segment:
+
+```text
+<data-root>/derived/frames/<route>/<segment>/frame_00000000.png
+<data-root>/derived/frames/<route>/<segment>/frames.jsonl
+```
+
+The usual download-to-images workflow is therefore:
+
+```sh
+nnslr sync-routes --route "$ROUTE"
+nnslr extract-frames --route "$ROUTE"
+```
+
+Only specify options when changing a default:
+
+```sh
+nnslr extract-frames --route "$ROUTE" --fps 5
+nnslr extract-frames --route "$ROUTE" --all-frames
+nnslr extract-frames --route "$ROUTE" --data-root /path/to/speed-vision-data
+nnslr extract-frames --route "$ROUTE" --output /path/to/images
+```
+
+`--output` is the parent of the per-segment directories. `--manifest FILE`
+optionally adds one combined JSONL in addition to the per-segment manifests.
+`--start` and `--end`, when supplied, apply within **each segment**, not to a
+route-wide clock. Segment discovery follows the local folders created by
+`sync-routes`; missing indices are not renumbered. A missing `fcamera.hevc`
+or pre-existing frame output is reported before extraction starts. Existing
+images are not overwritten unless `--overwrite` is explicitly supplied.
+
+This step extracts images for review and annotation. It does not recognize
+signs or establish camera capture timestamps; those require the later model
+and video/log alignment stages respectively. Single-video processing remains
+available with `--video FILE --output DIRECTORY`.
+<!-- [route-extract] - END -->
+
 ## T2 local comma video/log pipeline
 
 These commands operate only on files already copied under local storage. They
@@ -201,7 +250,9 @@ do **not** SSH to, download from, or modify a comma device.
 | `nnslr route-manifest` | Inventory local route segments, hashes, missing/partial segments. |
 | `nnslr inspect-manifest` | Summarize a route manifest. |
 | `nnslr video-probe` | Probe fcamera/ecamera/qcamera with ffprobe. |
-| `nnslr extract-frames` | Decode with ffmpeg; defaults to 1 fps discovery sampling, with `--all-frames` available. |
+<!-- [route-extract] - START -->
+| `nnslr extract-frames` | Use `--route ID` for all local segments automatically, or `--video FILE --output DIR` for one video; defaults to 1 fps, with `--all-frames` available. |
+<!-- [route-extract] - END -->
 | `nnslr log-metadata` | Read local qlog/rlog(.zst) camera/map metadata through a matching local openpilot checkout. |
 | `nnslr align-route` | Join ffprobe presentation order to openpilot `EncodeIndex.segmentId`; preserve unresolved frames explicitly. |
 | `nnslr alignment-report` | Print deterministic alignment diagnostics. |
@@ -260,6 +311,16 @@ nnslr extract-frames \
 ```
 
 ---
+
+<!-- [route-extract] - START -->
+For the complete option list of any implemented command, use its built-in help:
+
+```sh
+nnslr --help
+nnslr sync-routes --help
+nnslr extract-frames --help
+```
+<!-- [route-extract] - END -->
 
 ## What is not implemented yet (documented, not stubbed)
 
