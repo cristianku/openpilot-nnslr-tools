@@ -1,8 +1,10 @@
 # [route-extract] - START
-"""Route orchestration through the real CLI; decoding is replaced by a tiny executable."""
+"""Route orchestration through the real CLI and tiny synthetic videos."""
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,26 +16,17 @@ ROUTE = "000001a3--c20ba54385"
 
 @pytest.fixture
 def dataset(tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg/ffprobe needed")
     root = tmp_path / "data root"
     for index in (10, 0, 2):
         segment = root / "raw/routes" / ROUTE / str(index)
         segment.mkdir(parents=True)
-        (segment / "fcamera.hevc").write_text(f"front {index}")
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=red:s=64x48:r=20:d=0.1",
+                        "-c:v", "libx265", "-x265-params", "pools=1:frame-threads=1:log-level=error",
+                        str(segment / "fcamera.hevc")], check=True, capture_output=True)
         (segment / "ecamera.hevc").write_text("wrong camera")
-    ffmpeg = tmp_path / "ffmpeg"
-    ffmpeg.write_text(
-        "#!/bin/sh\n"
-        "while [ \"$#\" -gt 0 ]; do\n"
-        "  if [ \"$1\" = '-i' ]; then shift; input=$1; fi\n"
-        "  last=$1\n"
-        "  shift\n"
-        "done\n"
-        "out=$(printf '%s' \"$last\" | sed 's/%08d/00000000/')\n"
-        "cp \"$input\" \"$out\"\n"
-    )
-    ffmpeg.chmod(0o755)
     monkeypatch.setenv("NNSLR_DATA_ROOT", str(root))
-    monkeypatch.setenv("NNSLR_FFMPEG", str(ffmpeg))
     return root
 
 
@@ -54,7 +47,7 @@ def test_route_auto_discovers_segments_and_writes_frames_and_manifests(dataset, 
     assert report["frame_count"] == 3
     for index in (0, 2, 10):
         folder = dataset / "derived/frames" / ROUTE / str(index)
-        assert (folder / "frame_00000000.png").read_text() == f"front {index}"
+        assert (folder / "frame_00000000.png").read_bytes().startswith(b"\x89PNG")
         row = json.loads((folder / "frames.jsonl").read_text())
         assert row["route_id"] == ROUTE
         assert row["segment_index"] == index
@@ -124,3 +117,26 @@ def test_invalid_or_ambiguous_input_does_not_write(dataset, capsys, args):
     assert code != 0
     assert not (dataset / "derived").exists()
 # [route-extract] - END
+
+# [dataset-review] - START
+@pytest.mark.parametrize('alignment_kind',['missing','mismatched','invalid_capture'])
+def test_alignment_failure_preserves_images_and_manifest(dataset,capsys,tmp_path,alignment_kind):
+    code,out,err=run(capsys,'--route',ROUTE,'--all-frames')
+    assert code==0,err
+    output=dataset/'derived/frames'/ROUTE
+    before={str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}
+    alignment=tmp_path/'alignment';alignment.mkdir()
+    if alignment_kind!='missing':
+        from nnslr_tools.manifest import sha256_of
+        for index in (0,2,10):
+            video=dataset/'raw/routes'/ROUTE/str(index)/'fcamera.hevc'
+            log=video.with_name('rlog.zst');log.write_bytes(b'synthetic')
+            header=dict(kind='alignment_report',segment_num=index,stream='narrow_road',log=str(log),
+                        source_video_sha256='a'*64 if alignment_kind=='mismatched' else sha256_of(video),source_log_sha256=sha256_of(log))
+            frame=dict(kind='frame',decoded_frame_index=1,segment_num=index,alignment_status='exact',capture_mono_ns=-10,capture_reference='sof')
+            (alignment/f'{index}.jsonl').write_text(json.dumps(header)+'\n'+json.dumps(frame)+'\n')
+    code,out,err=run(capsys,'--route',ROUTE,'--overwrite','--start','0.05','--alignment',str(alignment))
+    assert code!=0
+    after={str(p.relative_to(output)):p.read_bytes() for p in output.rglob('*') if p.is_file()}
+    assert after==before
+# [dataset-review] - END

@@ -204,3 +204,43 @@ def test_road_text_rejects_invalid_boxes_and_uses_context_outside_text():
                 [[40,30],[40,30],[40,30],[40,30]]):
         assert road_text_proposals([[bad,'30',.99]],width=200,height=100,road_mask=mask)==[]
 # [road-text] - END
+
+# [frame-provenance] - START
+def test_discovery_preserves_verified_frame_identity(tmp_path):
+    root=tmp_path
+    frames(root)
+    manifest=root/'derived/frames'/ROUTE/'0/frames.jsonl'
+    rows=[json.loads(s) for s in manifest.read_text().splitlines()]
+    for row in rows:
+        row.update(decoded_frame_index=25,source_video_sha256='a'*64,source_log_sha256='b'*64,
+                   capture_mono_ns=9000000000,capture_time_provenance='encode_index_sof',alignment_status='exact')
+    manifest.write_text('\n'.join(json.dumps(r) for r in rows)+'\n')
+    result=discover_frames(root,ROUTE)
+    row=next(r for r in result if r['segment_index']==0)
+    assert row['decoded_frame_index']==25
+    assert row['capture_mono_ns']==9000000000
+    assert row['source_video_sha256']=='a'*64
+
+
+def test_discovery_rejects_image_changed_since_extraction(tmp_path):
+    frames(tmp_path)
+    manifest=tmp_path/'derived/frames'/ROUTE/'0/frames.jsonl'
+    rows=[json.loads(s) for s in manifest.read_text().splitlines()]
+    rows[0]['image_sha256']='a'*64
+    manifest.write_text('\n'.join(json.dumps(r) for r in rows)+'\n')
+    with pytest.raises(PreannotationError,match='hash'):
+        discover_frames(tmp_path,ROUTE)
+
+
+def test_review_refresh_uses_current_template_without_changing_proposals(tmp_path):
+    from nnslr_tools import review
+    assert hasattr(review,'refresh_review'), 'existing reports need the current review fields'
+    payload='{"frame_key":"0/0","detections":[]}\n'
+    (tmp_path/'preannotations.jsonl').write_text(payload)
+    (tmp_path/'run.json').write_text('{"run_id":"existing-run"}')
+    (tmp_path/'index.html').write_text('old template')
+    review.refresh_review(tmp_path)
+    assert 'id="reviewer"' in (tmp_path/'index.html').read_text()
+    assert 'existing-run' in (tmp_path/'index.html').read_text()
+    assert (tmp_path/'preannotations.jsonl').read_text()==payload
+# [frame-provenance] - END

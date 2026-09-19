@@ -256,8 +256,8 @@ or pre-existing frame output is reported before extraction starts. Existing
 images are not overwritten unless `--overwrite` is explicitly supplied.
 
 This step extracts images for review and annotation. It does not recognize
-signs or establish camera capture timestamps; those require the later model
-and video/log alignment stages respectively. Single-video processing remains
+signs. Capture timestamps are attached only when a matching, hash-bound
+video/log alignment is available; otherwise timing remains explicitly unresolved. Single-video processing remains
 available with `--video FILE --output DIRECTORY`.
 <!-- [route-extract] - END -->
 
@@ -302,7 +302,10 @@ frame. Edits persist in that browser. **Download the reviewed JSONL** to keep
 them outside browser storage. Only explicitly confirmed frames are exported;
 a frame with no proposals is never automatically a negative training example.
 Exports retain the original proposals and remain `training_ready: false` until
-alignment, annotation schema and dataset validation are completed.
+`import-annotations` validates them. Missing capture timing remains explicitly
+unknown: reviewed images may support classification, but not passage/latency claims.
+The review page records a reviewer name/pseudonym and confirmation time; reopening
+`nnslr review` updates older report pages without rerunning the model.
 
 ### What the models recognize
 
@@ -356,6 +359,9 @@ do **not** SSH to, download from, or modify a comma device.
 | `nnslr find-candidates` | Use map speed transitions as search hints only, never ground truth. |
 | `nnslr preannotate` | Propose sign boxes and road-surface-gated asphalt numbers on extracted route frames, using optional CPU models. |
 | `nnslr review` | Review the latest route proposals in a local browser and export confirmed annotations. |
+| `nnslr import-annotations` | Validate and import confirmed review JSONL; defaults to the annotation inbox and canonical objects file. |
+| `nnslr validate-dataset` | Check schema, images, hashes, boxes, review/provenance and timing; optionally verify frozen splits. |
+| `nnslr build-splits` | Freeze route/site/encounter/image-connected partitions with deterministic defaults and leakage checks. |
 | `nnslr make-clips` | Build local review clips around projected candidate times. |
 <!-- [route-extract] - END -->
 
@@ -443,6 +449,51 @@ nnslr extract-frames --help
 ```
 <!-- [route-extract] - END -->
 
+<!-- [reviewed-dataset] - START -->
+## Import reviewed annotations and build splits
+
+After confirming frames and downloading the JSONL from the review page:
+
+```sh
+nnslr import-annotations annotations-RUN_ID.jsonl
+nnslr validate-dataset
+nnslr build-splits
+```
+
+No environment variables or output folder arguments are required. All three
+commands use the configured data root, defaulting to `/srv/nnslr-data`.
+The default canonical dataset is `annotations/objects.jsonl`. Alternatively,
+put review files into `annotations/inbox/` under that root and run
+`nnslr import-annotations` with no arguments. Multiple input files can be
+imported together; reimporting duplicate identities is rejected.
+
+`build-splits` creates an immutable content-addressed JSON under `splits/`, with
+`latest.json` pointing to it. Seed defaults to `0`. It requires at least five
+independent connected groups and a reviewed negative group to populate train,
+validation, test, route-held-out and hard-negative. A route is never split by
+frame; known shared sites, encounters and duplicate images also stay together.
+With only two routes, this command reports insufficient groups instead of
+manufacturing an apparently independent test set. Unknown repeated physical
+sites remain a reported grouping limitation.
+
+An invalid dataset returns a JSON error report and nonzero exit code. For an
+existing split, `nnslr validate-dataset --splits /path/to/split.json` also checks
+membership, dataset identity and leakage. See [the canonical dataset contract](docs/DATASET.md).
+
+Extraction now records source decoded index, native geometry, image/video hashes,
+media time and provenance. Sampling picks the first available source frame at
+each requested interval and never duplicates it. `output_index` remains a
+separate PNG counter. This may retain one more frame at the end of a segment
+than the previous ffmpeg FPS filter. `--overwrite` stages and validates the new
+images before replacing old images and removing stale PNGs.
+
+`extract-frames --alignment FILE` attaches capture provenance for a single
+video; with `--route`, pass a directory containing `<segment>.jsonl` files.
+Route mode also discovers these files at `derived/alignment/ROUTE_ID/` by
+default. Generate alignments with the current `align-route` command: older
+files without source hashes are rejected rather than trusted implicitly.
+<!-- [reviewed-dataset] - END -->
+
 ## What is not implemented yet (documented, not stubbed)
 
 `nnslr` lists these subcommands and refuses them with exit code `3` so a clean
@@ -451,7 +502,6 @@ clone documents what does not exist rather than pretending:
 <!-- [nnslr-sync] - START -->
 `check-environment` (full);
 <!-- [nnslr-sync] - END -->
-`import-annotations`, `validate-dataset`, `build-splits` (T3);
 `train` (T4), `evaluate` (T5), `mine-hard-examples` (T6),
 `export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).
 

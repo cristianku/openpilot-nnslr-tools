@@ -40,6 +40,7 @@ try:
         page=browser.new_page();errors=[]
         page.on('pageerror',lambda err:errors.append(str(err)))
         page.goto(f'http://127.0.0.1:{server.server_port}')
+        page.locator('#reviewer').fill('synthetic-human')
         page.locator('#boxes button').click()
         assert page.locator('#family').input_value()=='road_marking_candidate'
         page.locator('#value').fill('50');page.locator('#value').dispatch_event('change')
@@ -53,6 +54,8 @@ try:
         assert len(exported)==1 and exported[0]['frame_key']=='0/0'
         assert exported[0]['detections'][0]['value_kph']==50
         assert exported[0]['source_proposals'][0]['value_kph']==30
+        assert exported[0]['reviewer']=='synthetic-human'
+        assert exported[0]['review_timestamp'].endswith('Z')
         assert not exported[0]['training_ready'] and not exported[0]['ground_truth']
         page.evaluate("() => { Storage.prototype.setItem=()=>{throw new DOMException('full','QuotaExceededError')}; }")
         page.locator('#value').fill('30');page.locator('#value').dispatch_event('change')

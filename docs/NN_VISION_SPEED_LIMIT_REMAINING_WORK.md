@@ -845,3 +845,18 @@ alignment, dataset validation/splits and actual training. The OCR/segmentation
 scores do not establish these properties. See README for commands, model
 provenance and the external weights' license constraints.
 <!-- [preannotation] - END -->
+
+<!-- [reviewed-dataset] - START -->
+## Update: reviewed annotation tooling and frame provenance
+
+`import-annotations`, `validate-dataset` and `build-splits` now have actual
+implementations, default data paths and deterministic tests. The canonical
+schema and grouping policy are documented in [DATASET.md](DATASET.md).
+Review captures reviewer/time, preserves proposal provenance and keeps
+unknown attributes explicit. Whole-route/site/encounter/image-hash grouping
+prevents frame-neighbor splitting; fewer than five independent groups cannot
+populate all requested partitions. Capture-aware manifests are available, but
+segment 0 and the independent ten-point synchronization audit remain unresolved.
+No reviewed Swiss corpus, baseline training, export bundle or runtime model is
+claimed by this local increment.
+<!-- [reviewed-dataset] - END -->

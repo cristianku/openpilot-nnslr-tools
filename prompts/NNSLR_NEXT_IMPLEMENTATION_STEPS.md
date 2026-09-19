@@ -3,6 +3,28 @@
 **Date:** 2026-09-19  
 **Scope:** `openpilot-nnslr-tools` + `cristianku/sunnypilot` runtime integration.
 
+<!-- [reviewed-dataset] - START -->
+## Local implementation update (2026-09-19)
+
+- A1: segment 0 is formally unresolved; no index offset is guessed.
+- A2: ten visual inspection points are recorded, but independent measured
+  timing errors/human synchronization audit are still missing. T2 stays partial.
+- A3: extracted manifests now preserve decoded index, geometry, media/capture
+  provenance and source hashes; current hash-bound alignments can be attached.
+- A4: additional decoder/stream/empty/duplicate-directory regressions exist.
+- B1–B4: canonical schema, `import-annotations`, `validate-dataset` and
+  deterministic connected-group `build-splits` are implemented locally.
+- Browser review records reviewer/time and optional site/encounter labels;
+  original proposals and rejected records remain available for audit.
+- The reviewed Swiss corpus, trained baseline, evaluation/export bundle and
+  runtime integration milestone remain pending. Synthetic tests are not a
+  substitute for human annotations or independent synchronization evidence.
+
+See [DATASET.md](../docs/DATASET.md) and the updated
+[T2 report](../docs/T2_REAL_ROUTE_VALIDATION.md). The historical snapshot below
+is retained for provenance; source and these updates supersede its CLI list.
+<!-- [reviewed-dataset] - END -->
+
 ## 0. Verified current state
 
 ### TRAIN_REPO

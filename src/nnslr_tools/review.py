@@ -49,8 +49,22 @@ def latest_report(root: Path, route: str) -> Path:
     return directory
 
 
+# [reviewed-dataset] - START
+def refresh_review(directory: Path) -> None:
+    """Upgrade the presentation of an existing run, preserving proposals and run identity."""
+    from nnslr_tools.annotations import load_jsonl
+    source = _inside(directory, directory / 'preannotations.jsonl')
+    metadata = _inside(directory, directory / 'run.json')
+    run_id = json.loads(metadata.read_text())['run_id']
+    write_review(directory, load_jsonl(source), run_id)
+# [reviewed-dataset] - END
+
+
 def serve_review(route: str, *, data_root: Path | None=None, host: str='127.0.0.1', port: int=8765) -> None:
     directory=latest_report(resolve_data_root(data_root),route)
+    # [reviewed-dataset] - START
+    refresh_review(directory)
+    # [reviewed-dataset] - END
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             path=public_file(directory,self.path)

@@ -116,3 +116,63 @@ nnslr selftest
   after those data contracts are settled. No model recognition or training is
   implemented by this increment.
 <!-- [t2-validation] - END -->
+
+<!-- [frame-provenance] - START -->
+## Continuation: source frame provenance and reviewed dataset tools
+
+A fresh local extraction of the same four original video/log segments now
+produces **199 PNGs (59 + 60 + 60 + 20)**. Each manifest records the source
+presentation index, native 1344 × 760 geometry, media time/provenance and image
+and video hashes. Current alignment files bind both video and log hashes.
+The 140 sampled frames from segments 1–3 carry exact EncodeIndex SOF evidence;
+all 59 from segment 0 remain unresolved. No guessed subtraction of 20 was added.
+
+The extra final image is intentional: sampling now selects the first original
+frame at each interval, including media time 19.0 seconds in the short final
+segment. PNG counters are not source decoded indices. Overwrite no longer
+includes leftover PNGs from an earlier denser extraction. Decoder errors, empty
+results and duplicate segment directories are rejected explicitly.
+
+Ten representative extracted images were visually inspected locally. Private
+JSONL audit records retain route identity, decoded index, media/capture times,
+source hashes, candidate time when available, visual event and status. The
+sanitized inspection inventory is:
+
+| Segment | Decoded index | Media seconds | Visual event | Independent timing error |
+| --- | ---: | ---: | --- | --- |
+| 0 | 0 | 0 | Building entrance, recording start | unresolved |
+| 0 | 1160 | 58 | Junction and give-way markings before boundary | unresolved |
+| 1 | 0 | 0 | Same junction after boundary | unresolved |
+| 1 | 600 | 30 | Urban street, following a van | unresolved |
+| 1 | 1180 | 59 | Dealer frontage before boundary | unresolved |
+| 2 | 0 | 0 | Same frontage after boundary | unresolved |
+| 2 | 600 | 30 | Roundabout entry and yield sign | unresolved |
+| 2 | 780 | 39 | Zone-30 entrance sign visible | unresolved |
+| 2 | 1180 | 59 | Parking aisle | unresolved |
+| 3 | 380 | 19 | Parked cars, last sampled image | unresolved |
+
+These are assistant visual inspections, **not ten human-confirmed timed clips**.
+No independent capture-to-visual timing reference was available, so measured
+errors stay null. A nearby MAP transition is not such a reference. The T2 gate
+therefore remains partial. The segment-0 origin is formally unresolved until
+verified producer/packet evidence establishes a mapping.
+
+Coverage now also exercises synthetic wide-road HEVC and qcamera transport
+streams, partial GOP/truncated HEVC rejection, zero/missing video, unchanged
+output on decode failure, source-hash mismatch, segment gaps/duplicates, and
+the existing missing/truncated log regressions. These tests are bounded
+fixtures, not proof of recovery for every possible corruption pattern.
+
+Fresh verification for this continuation: **218 passed**, with optional real
+ffmpeg, schema-parser and Chrome tests enabled; `nnslr selftest` passed all
+18 checks. A wheel built and installed into a separate clean environment also
+passed selftest and exposed the new CLI commands. All 199 actual PNGs passed
+full chunk/CRC/compressed-scanline integrity checks. Independent code review
+found contradictory frame labels, header-only image validation and premature
+image publication on alignment errors; all three have reproducing regressions
+and fixes. Source-decoded identity also prevents reimport under a new PNG counter.
+
+Canonical annotation import, validation and grouped splitting are documented
+in [DATASET.md](DATASET.md). They can preserve unresolved classification-only
+images without upgrading their capture evidence or closing this gate.
+<!-- [frame-provenance] - END -->

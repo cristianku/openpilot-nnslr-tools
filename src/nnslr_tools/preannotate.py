@@ -75,14 +75,29 @@ def discover_frames(root: Path, route: str) -> list[dict]:
             path = _inside(directory, path if path.is_absolute() else root / path)
             if not path.is_file():
                 raise PreannotationError(f'frame not found: {path}')
+            # [frame-provenance] - START
+            image_hash = sha256_of(path)
+            if raw.get('image_sha256') is not None and raw['image_sha256'] != image_hash:
+                raise PreannotationError(f'frame hash mismatch since extraction: {path}')
+            # [frame-provenance] - END
             seen.add((segment,index))
             rows.append({
                 'frame_key': f'{segment}/{index}', 'route_id': route, 'segment_index': segment,
                 'output_index': index, 'image_path': str(path.relative_to(root)),
-                'frame_sha256': sha256_of(path), 'camera_stream': raw.get('camera_stream', 'narrow_road'),
+                'frame_sha256': image_hash, 'camera_stream': raw.get('camera_stream', 'narrow_road'),
                 'requested_sample_fps': raw.get('requested_sample_fps'), 'start_s': raw.get('start_s'),
-                # Discovery output_index is not a source decoded index or capture clock.
-                'decoded_frame_index': None, 'capture_mono_ns': None, 'alignment_status': 'unresolved',
+                # [frame-provenance] - START
+                # Preserve explicit source evidence; legacy output_index is never promoted.
+                'decoded_frame_index': raw.get('decoded_frame_index'),
+                'capture_mono_ns': raw.get('capture_mono_ns'),
+                'alignment_status': raw.get('alignment_status', 'unresolved'),
+                'alignment_reason': raw.get('alignment_reason', 'legacy_manifest'),
+                'capture_time_provenance': raw.get('capture_time_provenance', 'unknown'),
+                'media_time_s': raw.get('media_time_s'),
+                'media_time_provenance': raw.get('media_time_provenance', 'unknown'),
+                'source_video_sha256': raw.get('source_video_sha256'),
+                'source_log_sha256': raw.get('source_log_sha256'),
+                # [frame-provenance] - END
             })
     if not rows:
         raise PreannotationError('frame manifests contain no frames')

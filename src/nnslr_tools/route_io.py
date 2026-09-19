@@ -53,6 +53,13 @@ def discover_segment_dirs(path: Path) -> list[tuple[RouteIdentity, Path]]:
     route_ids = {ident.route_id for ident, _ in found}
     if len(route_ids) != 1:
         raise NnslerManifestError("mixed_routes", ",".join(sorted(route_ids)))
+    # [segment-identity] - START
+    seen: set[int] = set()
+    for ident, directory in found:
+        if ident.segment_index in seen:
+            raise NnslerManifestError("duplicate_segment", str(directory))
+        seen.add(ident.segment_index)
+    # [segment-identity] - END
     return sorted(found, key=lambda pair: pair[0].segment_index)
 
 

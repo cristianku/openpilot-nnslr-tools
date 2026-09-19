@@ -1,0 +1,273 @@
+{
+  "$comment": "[reviewed-dataset] - START: Schema structure. Dataset validator additionally checks image files/hashes, pixel bounds, cross-row identity/timing and explicit review. [reviewed-dataset] - END",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "alignment_status": {
+      "enum": [
+        "exact",
+        "unresolved"
+      ]
+    },
+    "annotation_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "applicability": {
+      "enum": [
+        "other_road",
+        "own_road",
+        "unresolved"
+      ]
+    },
+    "bbox_xyxy": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "camera_stream": {
+      "enum": [
+        "narrow_road",
+        "q_narrow_road",
+        "wide_road"
+      ]
+    },
+    "capture_mono_ns": {
+      "minimum": 1,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "capture_time_provenance": {
+      "enum": [
+        "encode_index_eof",
+        "encode_index_sof",
+        "unknown"
+      ]
+    },
+    "decoded_frame_index": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "encounter_id": {
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "height": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "image_path": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "image_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "occlusion": {
+      "enum": [
+        "heavy",
+        "none",
+        "partial",
+        "unknown"
+      ]
+    },
+    "output_index": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "proposal_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "proposal_source": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "provenance": {
+      "properties": {
+        "label_basis": {
+          "const": "human_review"
+        },
+        "source_review_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label_basis",
+        "source_review_sha256"
+      ],
+      "type": "object"
+    },
+    "review_state": {
+      "enum": [
+        "accepted",
+        "corrected",
+        "pending",
+        "rejected"
+      ]
+    },
+    "review_timestamp": {
+      "format": "date-time",
+      "minLength": 1,
+      "type": "string"
+    },
+    "reviewer": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "route_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "segment_index": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sign_family": {
+      "enum": [
+        "cancellation",
+        "maximum_speed",
+        "not_a_sign",
+        "other_sign",
+        "road_marking",
+        "unreadable",
+        "variable_display",
+        "zone"
+      ]
+    },
+    "site_group": {
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_log_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_video_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "supplementary_panel": {
+      "enum": [
+        "none",
+        "present",
+        "unknown",
+        "unresolved"
+      ]
+    },
+    "temporary": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "value_kph": {
+      "maximum": 250,
+      "minimum": 5,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "value_state": {
+      "enum": [
+        "not_applicable",
+        "read",
+        "unknown",
+        "unreadable"
+      ]
+    },
+    "variable_display": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "visibility": {
+      "enum": [
+        "clear",
+        "partial",
+        "poor",
+        "unknown"
+      ]
+    },
+    "width": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "alignment_status",
+    "annotation_id",
+    "applicability",
+    "bbox_xyxy",
+    "camera_stream",
+    "capture_mono_ns",
+    "capture_time_provenance",
+    "decoded_frame_index",
+    "encounter_id",
+    "height",
+    "image_path",
+    "image_sha256",
+    "notes",
+    "occlusion",
+    "output_index",
+    "proposal_score",
+    "proposal_source",
+    "provenance",
+    "review_state",
+    "review_timestamp",
+    "reviewer",
+    "route_id",
+    "schema_version",
+    "segment_index",
+    "sign_family",
+    "site_group",
+    "source_log_sha256",
+    "source_video_sha256",
+    "supplementary_panel",
+    "temporary",
+    "value_kph",
+    "value_state",
+    "variable_display",
+    "visibility",
+    "width"
+  ],
+  "title": "NNSLR canonical annotation v1",
+  "type": "object"
+}

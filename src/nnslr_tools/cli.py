@@ -13,10 +13,9 @@ Implemented subcommands (T1):
   :func:`speed_vision_core.types.validate_batch` and the serialization
   round-trip; the CPU/synthetic quickstart for a clean clone.
 
-Not implemented yet (owning tasks): dataset manifest/extraction (T2),
-annotation validation and splits (T3), training (T4), evaluation (T5–T6),
-export/bundle (T7–T8). They are listed here so a clean clone documents what
-does not exist rather than reporting untested stubs as working.
+Local extraction/alignment (T2) and reviewed annotation import/validation/splits
+(T3) are implemented below. Training (T4), evaluation (T5–T6) and export/bundle
+(T7–T8) remain explicitly unimplemented.
 """
 
 from __future__ import annotations
@@ -49,6 +48,10 @@ from nnslr_tools.comma_log import (
     read_log_metadata,
 )
 from nnslr_tools.media import MediaToolError, extract_frames, make_clip, probe_frame_timestamps, probe_video
+# [frame-provenance] - START
+from nnslr_tools.media import extracted_frame_rows
+from nnslr_tools.manifest import sha256_of
+# [frame-provenance] - END
 # [route-extract] - START
 from nnslr_tools.manifest import NnslerManifestError, RouteManifest, normalize_relpath, parse_route_id
 from nnslr_tools.route_io import build_route_manifest, discover_segment_dirs
@@ -397,17 +400,19 @@ def _cmd_extract_frames(args: argparse.Namespace) -> int:
         start_s=args.start,
         end_s=args.end,
         ffmpeg=args.ffmpeg,
+        ffprobe=args.ffprobe,
+        alignment=Path(args.alignment) if args.alignment else None,
         overwrite=args.overwrite,
     )
-    rows = [frame.to_dict() for frame in frames]
+    rows = extracted_frame_rows(frames, alignment=Path(args.alignment) if args.alignment else None)
     if args.manifest:
         _write_jsonl(Path(args.manifest), rows)
     print(json.dumps({
         "frame_count": len(rows),
         "output": str(Path(args.output)),
         "manifest": args.manifest,
-        "timing": "media_only",
-        "capture_time_established": False,
+        "timing": "capture_aligned" if rows and all(r["alignment_status"] == "exact" for r in rows) else "media_only",
+        "capture_time_established": bool(rows) and all(r["alignment_status"] == "exact" for r in rows),
     }, indent=2, sort_keys=True))
     return 0
 
@@ -439,18 +444,26 @@ def _cmd_extract_route(args: argparse.Namespace) -> int:
             normalize_relpath(root, segment_output.relative_to(root))
         if not args.overwrite and next(segment_output.glob("frame_*.png"), None) is not None:
             raise MediaToolError("output_not_empty", str(segment_output))
-        plans.append((identity.segment_index, video, segment_output))
+        # [dataset-review] - START
+        alignment_base = Path(args.alignment) if args.alignment else root / "derived/alignment" / args.route
+        alignment_path = alignment_base / f"{identity.segment_index}.jsonl"
+        if args.alignment and not alignment_path.is_file():
+            raise ValueError(f"alignment missing: {alignment_path}")
+        plans.append((identity.segment_index, video, segment_output,
+                      alignment_path if alignment_path.is_file() else None))
+        # [dataset-review] - END
 
     all_rows = []
     summaries = []
-    for index, video, segment_output in plans:
+    for index, video, segment_output, alignment_path in plans:
         print(f"Extracting segment {index}: {video}", file=sys.stderr, flush=True)
         frames = extract_frames(
             video, segment_output, fps=None if args.all_frames else args.fps,
-            start_s=args.start, end_s=args.end, ffmpeg=args.ffmpeg, overwrite=args.overwrite,
+            start_s=args.start, end_s=args.end, ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, overwrite=args.overwrite,
+            alignment=alignment_path, route_id=args.route, segment_index=index,
         )
-        rows = [dict(frame.to_dict(), route_id=args.route, segment_index=index,
-                     camera_stream="narrow_road") for frame in frames]
+        rows = extracted_frame_rows(frames, route_id=args.route, segment_index=index,
+                                    alignment=alignment_path)
         manifest = segment_output / "frames.jsonl"
         _write_jsonl(manifest, rows)
         all_rows.extend(rows)
@@ -461,7 +474,8 @@ def _cmd_extract_route(args: argparse.Namespace) -> int:
     print(json.dumps({
         "route": args.route, "frame_count": len(all_rows), "output": str(output),
         "segments": summaries, "manifest": args.manifest,
-        "timing": "media_only", "capture_time_established": False,
+        "timing": "capture_aligned" if all_rows and all(r["alignment_status"] == "exact" for r in all_rows) else "media_only",
+        "capture_time_established": bool(all_rows) and all(r["alignment_status"] == "exact" for r in all_rows),
     }, indent=2, sort_keys=True))
     return 0
 # [route-extract] - END
@@ -501,6 +515,10 @@ def _cmd_align_route(args: argparse.Namespace) -> int:
         "stream": stream,
         "video": str(Path(args.video)),
         "log": str(Path(args.log)),
+        # [frame-provenance] - START
+        "source_video_sha256": sha256_of(Path(args.video)),
+        "source_log_sha256": sha256_of(Path(args.log)),
+        # [frame-provenance] - END
         "segment_num": args.segment_num,
         **report.to_dict(),
     }]
@@ -623,9 +641,6 @@ def _cmd_sync_routes(args: argparse.Namespace) -> int:
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "import-annotations": ("T3", "annotation validator lands in T3"),
-    "validate-dataset": ("T3", "annotation validator lands in T3"),
-    "build-splits": ("T3", "leakage-resistant split builder lands in T3"),
     "train": ("T4", "V100 training requires separate compute authorization"),
     "evaluate": ("T5", "offline evaluation lands in T5"),
     "mine-hard-examples": ("T6", "hard-example mining lands in T6"),
@@ -731,6 +746,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument("--start", type=float)
     p_extract.add_argument("--end", type=float)
     p_extract.add_argument("--ffmpeg")
+    # [frame-provenance] - START
+    p_extract.add_argument("--ffprobe")
+    p_extract.add_argument("--alignment", help="verified alignment JSONL; with --route, directory containing <segment>.jsonl")
+    # [frame-provenance] - END
     # [route-extract] - START
     p_extract.add_argument("--manifest", help="optional combined frame JSONL; --route also writes frames.jsonl in each segment directory")
     # [route-extract] - END
@@ -802,11 +821,58 @@ def build_parser() -> argparse.ArgumentParser:
     p_review.set_defaults(func=_cmd_review)
     # [preannotation] - END
 
+    # [reviewed-dataset] - START
+    p_import = sub.add_parser("import-annotations", help="import explicitly reviewed annotations into the canonical dataset")
+    p_import.add_argument("inputs", nargs="*", help="review JSONL files; default: <data-root>/annotations/inbox/*.jsonl")
+    p_import.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_import.add_argument("--output", help="default: <data-root>/annotations/objects.jsonl")
+    p_import.set_defaults(func=_cmd_dataset)
+    p_validate = sub.add_parser("validate-dataset", help="validate reviewed labels, images, hashes and capture provenance")
+    p_validate.add_argument("dataset", nargs="?", help="default: <data-root>/annotations/objects.jsonl")
+    p_validate.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_validate.add_argument("--splits", help="also check a frozen split for leakage and dataset identity")
+    p_validate.set_defaults(func=_cmd_dataset)
+    p_splits = sub.add_parser("build-splits", help="freeze deterministic route/site-connected dataset partitions")
+    p_splits.add_argument("dataset", nargs="?", help="default: <data-root>/annotations/objects.jsonl")
+    p_splits.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_splits.add_argument("--seed", type=int, default=0)
+    p_splits.add_argument("--output", help="default: <data-root>/splits/<sha256>.json (immutable)")
+    p_splits.set_defaults(func=_cmd_dataset)
+    # [reviewed-dataset] - END
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
         p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
 
     return parser
+
+
+# [reviewed-dataset] - START
+def _cmd_dataset(args: argparse.Namespace) -> int:
+    from nnslr_tools.annotations import import_reviews, load_jsonl, validate_dataset
+    from nnslr_tools.preannotate import resolve_data_root
+    root = resolve_data_root(Path(args.data_root) if args.data_root else None)
+    try:
+        if hasattr(args, "inputs"):
+            inputs = [Path(p) for p in args.inputs] if args.inputs else sorted((root / "annotations/inbox").glob("*.jsonl"))
+            output = Path(args.output) if args.output else root / "annotations/objects.jsonl"
+            report = import_reviews(inputs, root, output)
+        else:
+            dataset = Path(args.dataset) if args.dataset else root / "annotations/objects.jsonl"
+            rows = load_jsonl(dataset)
+            if hasattr(args, "seed"):
+                from nnslr_tools.splits import build_splits
+                report = build_splits(rows, root, seed=args.seed, output=Path(args.output) if args.output else None)
+            else:
+                report = validate_dataset(rows, root)
+                if args.splits and report["valid"]:
+                    from nnslr_tools.splits import validate_splits
+                    report["errors"].extend(validate_splits(rows, json.loads(Path(args.splits).read_text()), report["dataset_sha256"]))
+                    report["valid"] = not report["errors"]
+    except (ValueError, OSError) as exc:
+        report = {"valid": False, "errors": [{"reason": getattr(exc, "reason", "dataset_io_error"), "detail": str(exc)}]}
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0 if report["valid"] else 1
+# [reviewed-dataset] - END
 
 
 # [preannotation] - START
