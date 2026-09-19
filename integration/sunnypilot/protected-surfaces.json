@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56",
+  "forbidden_write_paths": [
+    "panda/**",
+    "opendbc_repo/**",
+    "openpilot/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py",
+    "openpilot/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py"
+  ],
+  "protected_contracts": [
+    {
+      "id": "car_speed_limit",
+      "path": "openpilot/cereal/custom.capnp",
+      "anchors": ["struct CarStateSP", "speedLimit @0 :Float32;"],
+      "rule": "NNSLR must never write CarStateSP.speedLimit"
+    },
+    {
+      "id": "map_speed_limit",
+      "path": "openpilot/cereal/custom.capnp",
+      "anchors": ["struct LiveMapDataSP", "speedLimit @1 :Float32;"],
+      "rule": "NNSLR must never write LiveMapDataSP speed-limit fields"
+    },
+    {
+      "id": "operational_speed_limit_sources",
+      "path": "openpilot/cereal/custom.capnp",
+      "anchors": ["enum Source {", "car @1;", "map @2;"],
+      "rule": "NNSLR bootstrap must not add Vision to the operational SLA source enum"
+    },
+    {
+      "id": "resolver_car_map_inputs",
+      "path": "openpilot/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py",
+      "anchors": ["_get_from_car_state", "_get_from_map_data"],
+      "rule": "Operational resolver inputs remain baseline CAR/MAP behavior"
+    }
+  ],
+  "forbidden_runtime_effects": [
+    "CAN transmission",
+    "cruise-button requests",
+    "target acceleration",
+    "steering or torque commands",
+    "safety configuration",
+    "radar mutation",
+    "automatic driving-model selection changes"
+  ]
+}
