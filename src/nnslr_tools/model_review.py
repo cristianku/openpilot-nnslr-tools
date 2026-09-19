@@ -231,12 +231,17 @@ def publish(rows, sources, root, output):
         canonical = load_jsonl(dataset)
         validation = validate_dataset(canonical, root, dataset_kind='training-candidate')
         try:
-            split = build_splits(canonical, root, dataset_kind='training-candidate', output=output/'candidate_splits.json')
+            # publish_latest=False: the split file is staged here and the durable
+            # <data-root>/datasets/training_candidate_dataset/splits/latest.json
+            # pointer is written by the runner only after the final rename.
+            split = build_splits(canonical, root, dataset_kind='training-candidate',
+                                 output=output/'candidate_splits.json', publish_latest=False)
         except ValueError as exc:
             split = {'valid': False, 'errors': [{'reason': getattr(exc, 'reason', 'invalid_splits'), 'detail': str(exc)}]}
     atomic_write(output/'validation.json', (json.dumps(validation, indent=2)+'\n').encode())
     atomic_write(output/'splits.json', (json.dumps(split, indent=2)+'\n').encode())
-    return {**report, 'candidate_frame_count': len(candidates), 'dataset_valid': validation['valid'], 'splits_valid': split['valid']}
+    return {**report, 'candidate_frame_count': len(candidates), 'dataset_valid': validation['valid'],
+            'splits_valid': split['valid'], 'split': split}
 
 
 def main(argv=None):
@@ -323,8 +328,19 @@ def run(args, root, output):
             staging = Path(tempfile.mkdtemp(prefix='.publish-', dir=output))
             status['summary'] = publish(rows, sources, root, staging)
             staging.rename(final)
+            # Only after the rename is final/candidate_splits.json durable; publish
+            # the pointer now so it never references the vanished staging path.
+            if status['summary'].get('splits_valid'):
+                pointer = root/'datasets'/'training_candidate_dataset'/'splits'/'latest.json'
+                payload = {'path': str((final/'candidate_splits.json').relative_to(root)),
+                           'sha256': status['summary']['split']['split_sha256']}
+                atomic_write(pointer, (json.dumps(payload, sort_keys=True)+'\n').encode())
+            # Keep the full publish summary (dataset_valid, candidate_frame_count,
+            # splits_valid) readable on resume; report/run.json alone lacks it.
+            atomic_write(final/'summary.json', (json.dumps(status['summary'], indent=2)+'\n').encode())
         else:
-            status['summary'] = json.loads((final/'report/run.json').read_text())
+            stored = final/'summary.json'
+            status['summary'] = json.loads((stored if stored.exists() else final/'report/run.json').read_text())
         status.update(status='completed', end_time=now())
         atomic_write(run_path, (json.dumps(status, indent=2)+'\n').encode())
         return 0

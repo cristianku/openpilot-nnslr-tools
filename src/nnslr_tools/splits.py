@@ -66,7 +66,7 @@ def validate_splits(rows: list[dict], split: dict, dataset_sha256: str, *, datas
 
 
 def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | None = None,
-                 dataset_kind: str = 'gold') -> dict:
+                 dataset_kind: str = 'gold', publish_latest: bool = True) -> dict:
     # [model-review] - START
     report = validate_dataset(rows, root, dataset_kind=dataset_kind)
     # [model-review] - END
@@ -113,8 +113,12 @@ def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | 
     else:
         atomic_write(target, content)
     # [model-review] - START
-    atomic_write(base / 'splits/latest.json', (json.dumps({'path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
-                                                       'sha256': digest}, sort_keys=True) + '\n').encode())
+    # A staged split (e.g. the model-review runner's rename-to-final staging dir)
+    # must not repoint the durable pointer at a path that is about to disappear;
+    # the caller publishes the pointer once the split is durably in place.
+    if publish_latest:
+        atomic_write(base / 'splits/latest.json', (json.dumps({'path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
+                                                           'sha256': digest}, sort_keys=True) + '\n').encode())
     # [model-review] - END
     return {'valid': True, 'dataset_kind': dataset_kind, 'dataset_sha256': report['dataset_sha256'], 'split_sha256': digest,
             'split_path': str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
