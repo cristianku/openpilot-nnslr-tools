@@ -222,8 +222,14 @@ def test_zero_frame_probe_rejected(tmp_path):
     video.write_bytes(b"")
     ffprobe = tmp_path / "ffprobe"
     _write_executable(ffprobe, '#!/bin/sh\nprintf \'{"frames":[],"format":{"format_name":"hevc"}}\'')
+    # [t2-ffmpeg-isolation] - START
+    # Isolate from a real ffmpeg: the zero-frame rejection fires before any decode,
+    # so a stub ffmpeg is resolved (PATH may lack ffmpeg in CI) but never invoked.
+    ffmpeg = tmp_path / "ffmpeg"
+    _write_executable(ffmpeg, "#!/bin/sh\nexit 1\n")
     with pytest.raises(MediaToolError, match="no frames"):
-        extract_frames(video, tmp_path / "empty", ffprobe=str(ffprobe))
+        extract_frames(video, tmp_path / "empty", ffmpeg=str(ffmpeg), ffprobe=str(ffprobe))
+    # [t2-ffmpeg-isolation] - END
 
 
 def test_frame_manifest_alignment_requires_matching_source_hashes(raw_hevc, tmp_path):
