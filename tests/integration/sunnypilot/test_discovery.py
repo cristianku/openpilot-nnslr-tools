@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 
-from nnslr_tools.integration.sunnypilot.discover import (
-    DiscoveryError,
-    discover_hooks,
-    load_hook_map,
-)
+
+def _api():
+    name = "nnslr_tools.integration.sunnypilot.discover"
+    assert importlib.util.find_spec(name) is not None, f"{name} is not implemented"
+    module = importlib.import_module(name)
+    return module.DiscoveryError, module.discover_hooks, module.load_hook_map
 
 ROOT = Path(__file__).resolve().parents[3]
 HOOK_MAP = ROOT / "integration" / "sunnypilot" / "hook-map.json"
@@ -22,6 +25,8 @@ def _fixture_files() -> dict[str, str]:
 
 
 def test_discovery_matches_pinned_baseline() -> None:
+    _, discover_hooks, load_hook_map = _api()
+    _, discover_hooks, load_hook_map = _api()
     hook_map = load_hook_map(HOOK_MAP)
     report = discover_hooks(_fixture_files(), hook_map)
     assert report.compatible is True
@@ -40,6 +45,7 @@ def test_discovery_reports_missing_required_anchor() -> None:
 
 
 def test_load_hook_map_rejects_duplicate_hook_ids(tmp_path: Path) -> None:
+    DiscoveryError, _, load_hook_map = _api()
     payload = {
         "schema_version": 1,
         "baseline": {"repository": "x/y", "commit": "a" * 40},
