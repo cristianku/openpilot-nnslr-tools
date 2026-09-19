@@ -45,3 +45,33 @@ def test_map_event_keeps_raw_hint_values() -> None:
     })
     assert isinstance(event, MapSpeedEvent)
     assert event.speed_limit == 22.2222
+
+# [t2-validation] - START
+from pathlib import Path
+import pytest
+from nnslr_tools.comma_log import CommaLogError, resolve_schema_paths
+
+
+def test_resolve_schemas_uses_explicit_matching_car_checkout(tmp_path):
+    root = tmp_path / "runtime"
+    cereal = root / "openpilot" / "cereal"
+    cereal.mkdir(parents=True)
+    (cereal / "log.capnp").touch()
+    car_root = tmp_path / "dbc"
+    car = car_root / "opendbc" / "car"
+    car.mkdir(parents=True)
+    (car / "car.capnp").touch()
+    assert resolve_schema_paths(root, car_root) == (cereal, car)
+
+
+def test_resolve_schemas_supports_embedded_layout_and_reports_missing(tmp_path, monkeypatch):
+    monkeypatch.delenv("NNSLR_OPENDBC_ROOT", raising=False)
+    (tmp_path / "cereal").mkdir()
+    (tmp_path / "cereal" / "log.capnp").touch()
+    with pytest.raises(CommaLogError, match="car_schema_not_found"):
+        resolve_schema_paths(tmp_path)
+    car = tmp_path / "opendbc" / "car"
+    car.mkdir(parents=True)
+    (car / "car.capnp").touch()
+    assert resolve_schema_paths(tmp_path) == (tmp_path / "cereal", car)
+# [t2-validation] - END

@@ -43,10 +43,10 @@ Permanent invariants:
 
 ## 2. TRAIN_REPO — current status
 
-Current `main` baseline:
+Baseline before this local T2 continuation:
 
 ```text
-9ffa00057905025c9fe6c8226664acc52330c32d
+6cb124f
 ```
 
 Already implemented:
@@ -56,10 +56,11 @@ Already implemented:
 - explicit unknown/unreadable/not-applicable/unavailable states;
 - strict speed-value and timestamp validation;
 - local Comma route/video/log tooling:
+  - `sync-routes` (default SSH host `comma`, all route segments, narrow camera + full rlog)
   - `route-manifest`
   - `inspect-manifest`
   - `video-probe`
-  - `extract-frames`
+  - `extract-frames` (supports a complete `--route` without a shell loop)
   - `log-metadata`
   - `align-route`
   - `alignment-report`
@@ -75,22 +76,21 @@ A real route is now available locally:
 segments: 0,1,2,3
 ```
 
-with the full set of camera/log files.
+with `fcamera.hevc` and `rlog.zst` for each segment. Other cameras/logs were
+removed and the narrow-camera/full-rlog set was downloaded again as requested.
 
 ### Immediate TRAIN_REPO work
 
-1. Finish the route-copy utility:
-   ```text
-   branch: nnslr/copy-comma-route
-   ```
-   Intended interface:
+<!-- [t2-validation] - START -->
+1. Route copy and route-wide frame extraction are implemented:
    ```bash
-   ./scripts/copy-comma-route.sh ROUTE [COMMA_HOST]
+   nnslr sync-routes --route ROUTE
+   nnslr extract-frames --route ROUTE
    ```
-   with `comma-remote` as default, hostname/IP support, automatic segment discovery, rsync resume behavior, and the destination:
-   ```text
-   $NNSLR_DATA_ROOT/raw/routes/<route>/<segment>/
-   ```
+   Default SSH host: `comma`; `--host` / `NNSLR_COMMA_HOST` override it.
+   Data root: `NNSLR_DATA_ROOT`, otherwise `/srv/nnslr-data`.
+   The proposed `copy-comma-route.sh` is superseded by this CLI.
+<!-- [t2-validation] - END -->
 
 2. Validate the complete T2 pipeline on the real route:
    ```text
@@ -103,6 +103,19 @@ with the full set of camera/log files.
    make-clips
    extract-frames
    ```
+
+<!-- [t2-validation] - START -->
+   **Current validation:** local end-to-end execution found and fixed parser
+   schema loading, HEVC media clock handling, false exact joins and empty HEVC
+   clips. Segments 1–3 provide 2,785 aligned full-rate frames; segment 0 has
+   1,180 unresolved frames because the logged indices start at 20. Five map
+   candidates are projected. The 198 discovery PNGs extracted previously are
+   media-only; they are not retroactively capture-aligned by these changes.
+
+   **T2 remains partial.** See [T2_REAL_ROUTE_VALIDATION.md](T2_REAL_ROUTE_VALIDATION.md).
+   Resolve/verify the first-segment mapping, perform the ten-clip manual audit,
+   and enrich extracted-frame manifests before declaring the gate complete.
+<!-- [t2-validation] - END -->
 
 3. Investigate real-world edge cases:
    - HEVC decode behavior;
@@ -682,10 +695,15 @@ new candidate branch
 ## 15. Recommended implementation order from here
 
 ### A — Real data
-- finish `copy-comma-route.sh`;
-- run T2 end-to-end on `00000089--0ac1c0fdec`;
-- inspect real alignment failures;
-- generate discovery frames and candidate clips.
+<!-- [t2-validation] - START -->
+- [x] `sync-routes` with default host `comma`, resume and segment discovery;
+- [x] route-wide `extract-frames`;
+- [x] run the local T2 commands on the four-segment route and fix observed failures;
+- [x] project five map candidates and generate review clips;
+- [ ] establish a verified mapping for the nonzero first-segment index;
+- [ ] complete the ten-clip manual alignment audit and timestamp/geometry frame manifests;
+- [ ] extend validation to missing/truncated recordings and other camera streams.
+<!-- [t2-validation] - END -->
 
 ### B — Dataset
 - annotation schema;

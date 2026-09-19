@@ -104,3 +104,25 @@ Registrazione delle scelte con alternative, evidenza, opzione scelta, dominio su
 5. Dati privati (route, immagini, coordinate, checkpoint) **mai** in Git, mai nelle pipeline di upload esistenti (`uploader.py` comma + `sunnylink/uploader.py`).
 6. Artifact promotion esplicita: bundle + core snapshot con digest, verificati; niente `latest`, niente auto-deploy.
 7. Ogni blocco di codice modificato nei repo del port porta i marcatori `[tag] - START/END` (convenzione `openpilot_scripts/AGENTS.md`).
+
+<!-- [schema-reader] - START -->
+## D9 — Lettore log locale isolato (incremento T2, 2026-09-19)
+
+- **Problema osservato:** importare `openpilot.tools.lib.logreader` trascina lo
+  stack runtime e può caricare un `car.capnp` installato incompatibile con il
+  `log.capnp` selezionato. La prova reale falliva prima di leggere gli eventi.
+- **Scelta:** il subprocess carica direttamente gli schemi dal checkout locale;
+  `NNSLR_OPENDBC_ROOT` / `--opendbc-root` seleziona esplicitamente un checkout
+  compatibile se quello incorporato non è disponibile. Nessun fallback silenzioso
+  al pacchetto opendbc globale.
+- **Dipendenze:** solo il Python del subprocess richiede `pycapnp` e, per `.zst`,
+  `zstandard`. Profilo opzionale `log-reader` in `pyproject.toml` e
+  `requirements/log-reader.txt`. Core, import CLI e fixture restano stdlib-only.
+- **Alternative:** installare tutto lo stack openpilot non è necessario per
+  estrarre questi metadati; incorporare schemi nel repo richiederebbe mantenerli
+  sincronizzati con le versioni dei log.
+- **Limite:** compatibilità schema/produttore da verificare per ogni famiglia di
+  registrazioni; nessuna migrazione automatica o garanzia universale tra fork.
+- **Verifica:** round-trip capnp sintetico in subprocess per raw/bz2/zst,
+  errore su messaggio troncato e lettura dei quattro rlog reali.
+<!-- [schema-reader] - END -->

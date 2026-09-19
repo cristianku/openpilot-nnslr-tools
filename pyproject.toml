@@ -27,6 +27,10 @@ classifiers = [
 # profiles are added by their owning tasks (T4+) and must never be required
 # by core/data/cli tests.
 cpu-test = []
+# [schema-reader] - START
+# Only the isolated log-reading interpreter needs these optional dependencies.
+log-reader = ["pycapnp>=2.0,<3", "zstandard>=0.22,<1"]
+# [schema-reader] - END
 
 [project.scripts]
 nnslr = "nnslr_tools.cli:main"

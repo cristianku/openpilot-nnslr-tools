@@ -15,7 +15,7 @@ import math
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Sequence
@@ -155,6 +155,10 @@ class VideoFrameTiming:
     best_effort_timestamp_s: float | None
     key_frame: bool
     pict_type: str | None
+    # [media-clock] - START
+    media_time_s: float | None = None
+    media_time_source: str = "unknown"
+    # [media-clock] - END
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -164,6 +168,8 @@ class VideoFrameTiming:
             "best_effort_timestamp_s": self.best_effort_timestamp_s,
             "key_frame": self.key_frame,
             "pict_type": self.pict_type,
+            "media_time_s": self.media_time_s,
+            "media_time_source": self.media_time_source,
         }
 
 
@@ -264,9 +270,9 @@ def probe_frame_timestamps(path: Path, *, ffprobe: str | None = None) -> list[Vi
         raise MediaToolError("video_not_found", str(path))
     exe = _resolve_executable("ffprobe", ffprobe)
     payload = _run_json([
-        exe, "-v", "error", "-select_streams", "v:0", "-show_frames",
+        exe, "-v", "error", "-select_streams", "v:0", "-show_frames", "-show_format",
         "-show_entries",
-        "frame=pts_time,pkt_dts_time,best_effort_timestamp_time,key_frame,pict_type",
+        "frame=pts_time,pkt_dts_time,best_effort_timestamp_time,key_frame,pict_type,duration_time,pkt_duration_time:format=format_name",
         "-print_format", "json", str(path),
     ])
     frames = payload.get("frames", [])
@@ -276,7 +282,7 @@ def probe_frame_timestamps(path: Path, *, ffprobe: str | None = None) -> list[Vi
     out: list[VideoFrameTiming] = []
     for idx, raw in enumerate(frames):
         if not isinstance(raw, dict):
-            continue
+            raise MediaToolError("invalid_frame_probe", f"frame {idx} is not an object")
         out.append(VideoFrameTiming(
             decoded_frame_index=idx,
             pts_time_s=_number_or_none(raw.get("pts_time")),
@@ -285,6 +291,31 @@ def probe_frame_timestamps(path: Path, *, ffprobe: str | None = None) -> list[Vi
             key_frame=bool(raw.get("key_frame") == 1),
             pict_type=raw.get("pict_type") if isinstance(raw.get("pict_type"), str) else None,
         ))
+    # [media-clock] - START
+    # Raw HEVC carries frame durations but no container timestamps. Reproduce
+    # its decoder media clock only when every duration is valid; never use
+    # avg_frame_rate (ffprobe may report 25 for a 20 Hz camera).
+    durations = [_number_or_none(raw.get("duration_time", raw.get("pkt_duration_time"))) for raw in frames]
+    generated = (
+        payload.get("format", {}).get("format_name") == "hevc"
+        and bool(out)
+        and all(f.pts_time_s is None and f.best_effort_timestamp_s is None and f.dts_time_s is None for f in out)
+        and all(d is not None and d > 0 for d in durations)
+    )
+    elapsed = 0.0
+    for i, frame in enumerate(out):
+        if frame.best_effort_timestamp_s is not None:
+            time, source = frame.best_effort_timestamp_s, "best_effort_timestamp"
+        elif frame.pts_time_s is not None:
+            time, source = frame.pts_time_s, "pts"
+        elif generated:
+            time, source = elapsed, "raw_hevc_frame_duration"
+        else:
+            time, source = None, "unknown"
+        out[i] = replace(frame, media_time_s=time, media_time_source=source)
+        if generated:
+            elapsed += durations[i]
+    # [media-clock] - END
     return out
 
 
@@ -318,11 +349,14 @@ def extract_frames(
     if existing and not overwrite:
         raise MediaToolError("output_not_empty", str(output_dir))
 
-    cmd: list[str] = [exe, "-hide_banner", "-loglevel", "warning"]
+    cmd: list[str] = [exe, "-hide_banner", "-loglevel", "warning", "-abort_on", "empty_output"]
     cmd.append("-y" if overwrite else "-n")
+    # [hevc-seek] - START
+    # Raw HEVC has no seek index: decode first, then discard up to --start.
+    cmd += ["-i", str(video)]
     if start_s is not None:
         cmd += ["-ss", f"{start_s:.9f}"]
-    cmd += ["-i", str(video)]
+    # [hevc-seek] - END
     if end_s is not None:
         duration = end_s - (start_s or 0.0)
         cmd += ["-t", f"{duration:.9f}"]
@@ -365,13 +399,20 @@ def make_clip(
     exe = _resolve_executable("ffmpeg", ffmpeg)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        exe, "-hide_banner", "-loglevel", "warning", "-y", "-ss",
-        f"{start_s:.9f}", "-i", str(video), "-t", f"{end_s - start_s:.9f}",
-        "-map", "0:v:0",
-    ]
+    # [hevc-seek] - START
+    # Packet-copy seeking cannot cut raw HEVC at a requested media time.
+    # Decode from the beginning and encode the selected interval automatically.
+    reencode = reencode or video.suffix.lower() in {".hevc", ".h265"}
+    cmd = [exe, "-hide_banner", "-loglevel", "warning", "-abort_on", "empty_output", "-y"]
+    if not reencode:
+        cmd += ["-ss", f"{start_s:.9f}"]
+    cmd += ["-i", str(video)]
     if reencode:
-        cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-an"]
+        cmd += ["-ss", f"{start_s:.9f}"]
+    cmd += ["-t", f"{end_s - start_s:.9f}", "-map", "0:v:0"]
+    if reencode:
+        cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-fps_mode", "passthrough", "-an"]
+    # [hevc-seek] - END
     else:
         cmd += ["-c", "copy"]
     cmd.append(str(output))

@@ -105,9 +105,27 @@ parsing, point the tooling at a matching local openpilot/sunnypilot checkout:
 
 ```sh
 export NNSLR_OPENPILOT_ROOT=/path/to/openpilot
-# Optional when that checkout needs a different Python environment:
-export NNSLR_OPENPILOT_PYTHON=/path/to/openpilot-python
+# The child interpreter needs only the optional log-reader dependencies:
+export NNSLR_OPENPILOT_PYTHON=/path/to/parser-venv/bin/python
+# Only if compatible car.capnp is not embedded in the checkout:
+export NNSLR_OPENDBC_ROOT=/path/to/opendbc
 ```
+
+<!-- [schema-reader] - START -->
+Create the optional parser environment once, separately from the core CLI:
+
+```sh
+python3 -m venv /path/to/parser-venv
+/path/to/parser-venv/bin/python -m pip install -r requirements/log-reader.txt
+```
+
+The reader loads `openpilot/cereal/log.capnp` (or `cereal/log.capnp`) directly
+in a child process; it does not import or install the openpilot runtime.
+`log-metadata`, `align-route` and `find-candidates` also accept
+`--openpilot-root`, `--openpilot-python` and `--opendbc-root` overrides.
+Use compatible `log.capnp` and `car.capnp` versions: a schema mismatch or
+truncated log fails the command instead of returning partial metadata.
+<!-- [schema-reader] - END -->
 
 ---
 
@@ -274,10 +292,31 @@ EncodeIndex.segmentIdEncode (encode order)
 camera capture timestamp
 ```
 
-Current openpilot defines `EncodeIndex.segmentId` as the index into the camera
-file in **presentation order**, so that field is the explicit join key used by
-the real local adapter. The old synthetic `manifest.align_frames()` helper
-remains fixture-only.
+<!-- [t2-validation] - START -->
+The adapter uses `EncodeIndex.segmentId` as its presentation-order join key
+only when the complete index domain matches decoded positions `0..N-1`.
+Real logger startup can leave a nonzero first `segmentId`; truncated or missing
+data can also break that domain. Those segments remain unresolved with
+`presentation_index_domain_mismatch` (CLI exit 1); the tool never silently
+subtracts an offset. Duplicate indices and missing capture timestamps also
+remain unresolved. The synthetic `manifest.align_frames()` helper is fixture-only.
+
+Raw HEVC often has no PTS. The frame/alignment output exposes a separate
+`media_time_s` / `video_media_time_s` and provenance
+`raw_hevc_frame_duration` when every decoded frame has a valid duration.
+PTS stays null; camera capture time still comes only from the log. Other
+containers, mixed timestamps or missing durations do not use that fallback.
+
+`make-clips` automatically reencodes raw `.hevc`/`.h265` to H.264 MP4 and
+performs seeking after opening the input; packet-copy seeks produced empty
+files on real recordings. `extract-frames --start` also decodes before seeking.
+These operations can take longer because they decode from the beginning.
+Empty output is an error. For timestamped containers the default clip mode is
+packet copy (keyframe boundaries); use `--reencode` for a precise cut.
+
+See [the real-route validation report](docs/T2_REAL_ROUTE_VALIDATION.md) for
+verified coverage and outstanding T2 checks.
+<!-- [t2-validation] - END -->
 
 Typical local flow:
 

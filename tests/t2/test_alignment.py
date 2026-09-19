@@ -65,3 +65,22 @@ def test_missing_capture_timestamp_stays_unresolved() -> None:
     assert aligned[0].capture_mono_ns is None
     assert aligned[0].alignment_status == "unresolved"
     assert report.matched == 0
+
+# [t2-validation] - START
+def test_shifted_segment_does_not_create_false_exact_matches() -> None:
+    frames = [_frame(i) for i in range(30)]
+    metadata = [_enc(i + 20, i + 100) for i in range(30)]
+    aligned, report = align_comma_segment(frames, metadata, segment_num=4)
+    assert report.matched == 0
+    assert report.unresolved == 30
+    assert all(x.capture_mono_ns is None for x in aligned)
+    assert {x.alignment_reason for x in aligned} == {"presentation_index_domain_mismatch"}
+
+
+def test_missing_interior_metadata_does_not_shift_following_frames() -> None:
+    aligned, report = align_comma_segment(
+        [_frame(i) for i in range(3)], [_enc(0, 100), _enc(2, 102), _enc(3, 103)], segment_num=4,
+    )
+    assert report.matched == 0
+    assert all(x.frame_id is None for x in aligned)
+# [t2-validation] - END

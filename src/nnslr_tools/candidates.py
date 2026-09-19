@@ -95,7 +95,7 @@ def project_candidates_to_video(
         f for f in aligned_frames
         if f.alignment_status == "exact"
         and f.capture_mono_ns is not None
-        and (f.video_best_effort_time_s is not None or f.video_pts_time_s is not None)
+        and (f.video_media_time_s is not None or f.video_best_effort_time_s is not None or f.video_pts_time_s is not None)
     ]
     anchors.sort(key=lambda f: int(f.capture_mono_ns))
     out: list[CandidateEvent] = []
@@ -106,8 +106,8 @@ def project_candidates_to_video(
         nearest = min(anchors, key=lambda f: abs(int(f.capture_mono_ns) - candidate.log_mono_time))
         error = abs(int(nearest.capture_mono_ns) - candidate.log_mono_time)
         video_time = (
-            nearest.video_best_effort_time_s
-            if nearest.video_best_effort_time_s is not None
+            nearest.video_media_time_s if nearest.video_media_time_s is not None
+            else nearest.video_best_effort_time_s if nearest.video_best_effort_time_s is not None
             else nearest.video_pts_time_s
         )
         if error > max_error_ns:

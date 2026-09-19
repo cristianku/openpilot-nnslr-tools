@@ -1,10 +1,10 @@
 # [nnslr-t2] - START
 """Read LOCAL qlog/rlog metadata through a local openpilot checkout.
 
-No network access and no device access occurs here. The adapter launches the
-current Python interpreter with NNSLR_OPENPILOT_ROOT (or --openpilot-root) on
-sys.path and uses openpilot.tools.lib.logreader.LogReader, which natively
-handles .rlog/.qlog and .zst/.bz2 compression.
+No network or device access occurs here. A child interpreter loads only the
+Cap'n Proto schemas from a local checkout, with optional pycapnp/zstandard in
+that interpreter. It does not import the openpilot runtime or its dependency
+stack. NNSLR_OPENDBC_ROOT can select the compatible car.capnp checkout.
 
 The adapter preserves the fields needed to join camera video presentation order
 to camera capture timestamps. openpilot's EncodeIndex schema defines segmentId
@@ -106,10 +106,36 @@ _CHILD_SCRIPT = r"""
 import json
 import sys
 
-root, log_path = sys.argv[1], sys.argv[2]
-sys.path.insert(0, root)
+# [schema-reader] - START
+import bz2
+from pathlib import Path
+import capnp
 
-from openpilot.tools.lib.logreader import LogReader
+cereal_dir, car_dir, log_path = sys.argv[1:4]
+capnp.remove_import_hook()
+schema = capnp.load(str(Path(cereal_dir) / "log.capnp"), imports=[cereal_dir, car_dir])
+path = Path(log_path)
+if path.suffix == ".zst":
+    import zstandard
+    compressed = path.read_bytes()
+    if not compressed:
+        raise ValueError("empty zstd log")
+    chunks = []
+    while compressed:
+        decoder = zstandard.ZstdDecompressor().decompressobj()
+        chunks.append(decoder.decompress(compressed))
+        if not decoder.eof:
+            raise ValueError("truncated zstd frame")
+        compressed = decoder.unused_data
+    data = b"".join(chunks)
+elif path.suffix == ".bz2":
+    data = bz2.decompress(path.read_bytes())
+else:
+    data = path.read_bytes()
+# read_multiple_bytes raises for malformed/truncated messages; never return a
+# successful partial metadata stream when decoding fails.
+messages = sorted(schema.Event.read_multiple_bytes(data), key=lambda msg: msg.logMonoTime)
+# [schema-reader] - END
 
 ENCODE = {
     "narrowRoadEncodeIdx",
@@ -141,7 +167,7 @@ def fval(obj, name):
     except Exception:
         return None
 
-for msg in LogReader(log_path, sort_by_time=True):
+for msg in messages:
     try:
         which = msg.which()
     except Exception:
@@ -192,10 +218,28 @@ def resolve_openpilot_root(explicit: Path | None = None) -> Path:
             "set NNSLR_OPENPILOT_ROOT or pass --openpilot-root",
         )
     root = Path(raw).expanduser().resolve()
-    marker = root / "openpilot" / "tools" / "lib" / "logreader.py"
-    if not marker.is_file():
-        raise CommaLogError("invalid_openpilot_root", f"missing {marker}")
+    if not any((root / prefix / "log.capnp").is_file() for prefix in ("openpilot/cereal", "cereal")):
+        raise CommaLogError("invalid_openpilot_root", "missing openpilot/cereal/log.capnp or cereal/log.capnp")
     return root
+
+
+# [schema-reader] - START
+def resolve_schema_paths(openpilot_root: Path, opendbc_root: Path | None = None) -> tuple[Path, Path]:
+    root = resolve_openpilot_root(openpilot_root)
+    cereal = next(root / prefix for prefix in ("openpilot/cereal", "cereal")
+                  if (root / prefix / "log.capnp").is_file())
+    raw = opendbc_root or os.environ.get("NNSLR_OPENDBC_ROOT")
+    if raw:
+        dbc = Path(raw).expanduser().resolve()
+        candidates = [dbc / "opendbc/car", dbc / "car", dbc]
+    else:
+        candidates = [root / "opendbc/opendbc/car", root / "opendbc/car",
+                      root / "openpilot/opendbc/opendbc/car", root / "openpilot/opendbc/car"]
+    car = next((p for p in candidates if (p / "car.capnp").is_file()), None)
+    if car is None:
+        raise CommaLogError("car_schema_not_found", "set NNSLR_OPENDBC_ROOT or --opendbc-root to a compatible checkout")
+    return cereal, car
+# [schema-reader] - END
 
 
 def _strict_int(raw: dict[str, Any], name: str) -> int:
@@ -257,22 +301,24 @@ def read_log_metadata(
     *,
     openpilot_root: Path | None = None,
     python_executable: str | None = None,
+    opendbc_root: Path | None = None,
 ) -> list[LogEvent]:
     """Read supported metadata from a local qlog/rlog file."""
     if not log_path.is_file():
         raise CommaLogError("log_not_found", str(log_path))
     root = resolve_openpilot_root(openpilot_root)
+    cereal, car = resolve_schema_paths(root, opendbc_root)
     exe = python_executable or os.environ.get("NNSLR_OPENPILOT_PYTHON") or sys.executable
 
     proc = subprocess.run(
-        [exe, "-c", _CHILD_SCRIPT, str(root), str(log_path.resolve())],
+        [exe, "-c", _CHILD_SCRIPT, str(cereal), str(car), str(log_path.resolve())],
         capture_output=True,
         text=True,
         check=False,
     )
     if proc.returncode != 0:
         raise CommaLogError(
-            "openpilot_logreader_failed",
+            "log_schema_reader_failed",
             f"{log_path} (exit {proc.returncode})",
             stderr=proc.stderr.strip(),
         )

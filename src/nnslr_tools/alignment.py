@@ -34,6 +34,10 @@ class CommaAlignedFrame:
     capture_reference: str
     alignment_status: str
     alignment_reason: str | None
+    # [media-clock] - START
+    video_media_time_s: float | None = None
+    video_media_time_source: str = "unknown"
+    # [media-clock] - END
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +54,8 @@ class CommaAlignedFrame:
             "capture_reference": self.capture_reference,
             "alignment_status": self.alignment_status,
             "alignment_reason": self.alignment_reason,
+            "video_media_time_s": self.video_media_time_s,
+            "video_media_time_source": self.video_media_time_source,
         }
 
 
@@ -96,6 +102,8 @@ def comma_aligned_frame_from_dict(data: dict[str, Any]) -> CommaAlignedFrame:
         capture_reference=capture_reference,
         alignment_status=alignment_status,
         alignment_reason=reason,
+        video_media_time_s=opt_float("video_media_time_s"),
+        video_media_time_source=data.get("video_media_time_source", "unknown"),
     )
 
 
@@ -157,6 +165,12 @@ def align_comma_segment(
     frame_id_duplicates = tuple(sorted(k for k, count in by_frame_id.items() if count > 1))
 
     video_indices = {f.decoded_frame_index for f in video_frames}
+    # [t2-validation] - START
+    # Logger startup can discard frames up to an I-frame without resetting
+    # segmentId. Missing/truncated inputs are also ambiguous: overlapping ids
+    # alone cannot prove their correspondence to decoded positions.
+    domain_matches = video_indices == set(by_segment_id) and video_indices == set(range(len(video_frames)))
+    # [t2-validation] - END
     unmatched_metadata = tuple(sorted(k for k in by_segment_id if k not in video_indices))
     unmatched_video: list[int] = []
     aligned: list[CommaAlignedFrame] = []
@@ -164,14 +178,17 @@ def align_comma_segment(
 
     for frame in sorted(video_frames, key=lambda f: f.decoded_frame_index):
         candidates = by_segment_id.get(frame.decoded_frame_index, [])
-        if len(candidates) != 1:
-            reason = "missing_encode_index" if not candidates else "duplicate_encode_index"
+        if not domain_matches or len(candidates) != 1:
+            reason = ("presentation_index_domain_mismatch" if not domain_matches
+                      else "missing_encode_index" if not candidates else "duplicate_encode_index")
             unmatched_video.append(frame.decoded_frame_index)
             aligned.append(
                 CommaAlignedFrame(
                     decoded_frame_index=frame.decoded_frame_index,
                     video_pts_time_s=frame.pts_time_s,
                     video_best_effort_time_s=frame.best_effort_timestamp_s,
+                    video_media_time_s=frame.media_time_s,
+                    video_media_time_source=frame.media_time_source,
                     frame_id=None,
                     segment_num=None,
                     segment_id=None,
@@ -197,6 +214,8 @@ def align_comma_segment(
                 decoded_frame_index=frame.decoded_frame_index,
                 video_pts_time_s=frame.pts_time_s,
                 video_best_effort_time_s=frame.best_effort_timestamp_s,
+                video_media_time_s=frame.media_time_s,
+                video_media_time_source=frame.media_time_source,
                 frame_id=event.frame_id,
                 segment_num=event.segment_num,
                 segment_id=event.segment_id,

@@ -1,0 +1,5 @@
+# [schema-reader] - START
+# Optional isolated parser environment; never required by the core or CLI.
+pycapnp>=2.0,<3
+zstandard>=0.22,<1
+# [schema-reader] - END
