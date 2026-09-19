@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "feature_id": "nnslr-speed-vision",
+  "state": "bootstrap",
+  "runtime_repository": "cristianku/sunnypilot",
+  "upstream_repository": "sunnypilot/sunnypilot",
+  "upstream_ref": "refs/heads/master",
+  "source_base_commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56",
+  "source_feature_commit": null,
+  "patches": [],
+  "core": {
+    "state": "unavailable",
+    "source_commit": null,
+    "tree_digest": null,
+    "files": []
+  },
+  "schema_bindings": {
+    "state": "unassigned",
+    "bindings": []
+  },
+  "capability_profile": "bootstrap",
+  "hook_map_digest": "61679b4a43bde3841b283cbf30311155ed3bf6b066256fcc9235430859c08c9b"
+}
