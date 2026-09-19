@@ -788,11 +788,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_clips.add_argument("--reencode", action="store_true")
     p_clips.set_defaults(func=_cmd_make_clips)
 
+    # [preannotation] - START
+    p_pre = sub.add_parser("preannotate", help="propose sign boxes/values on all extracted route frames (CPU)")
+    p_pre.add_argument("--route", required=True)
+    p_pre.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_pre.add_argument("--confidence", type=float, default=.25)
+    p_pre.set_defaults(func=_cmd_preannotate)
+    p_review = sub.add_parser("review", help="open the latest route annotation report through a local HTTP server")
+    p_review.add_argument("--route", required=True)
+    p_review.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_review.add_argument("--host", default="127.0.0.1", help="listen address; default: local only")
+    p_review.add_argument("--port", type=int, default=8765)
+    p_review.set_defaults(func=_cmd_review)
+    # [preannotation] - END
+
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
         p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
 
     return parser
+
+
+# [preannotation] - START
+def _cmd_preannotate(args: argparse.Namespace) -> int:
+    from nnslr_tools.preannotate import run_preannotation
+    result = run_preannotation(args.route, data_root=Path(args.data_root) if args.data_root else None,
+                               confidence=args.confidence)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_review(args: argparse.Namespace) -> int:
+    from nnslr_tools.review import serve_review
+    serve_review(args.route, data_root=Path(args.data_root) if args.data_root else None,
+                 host=args.host, port=args.port)
+    return 0
+# [preannotation] - END
 
 
 def _cmd_version(args: argparse.Namespace) -> int:

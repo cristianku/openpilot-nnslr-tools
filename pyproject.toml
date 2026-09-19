@@ -30,6 +30,9 @@ cpu-test = []
 # [schema-reader] - START
 # Only the isolated log-reading interpreter needs these optional dependencies.
 log-reader = ["pycapnp>=2.0,<3", "zstandard>=0.22,<1"]
+# [preannotation] - START
+preannotate = ["onnxruntime>=1.20,<2", "Pillow>=11,<13", "numpy>=1.26,<3"]
+# [preannotation] - END
 # [schema-reader] - END
 
 [project.scripts]
@@ -48,7 +51,7 @@ where = ["src"]
 # (fixtures/t2/) are iterated by the manifest/align command and the T2 tests.
 # [nnslr-t2] - END
 [tool.setuptools.package-data]
-"nnslr_tools" = ["fixtures/*.json", "fixtures/t2/*.json"]
+"nnslr_tools" = ["fixtures/*.json", "fixtures/t2/*.json", "review.html"]
 "speed_vision_core" = ["py.typed"]
 
 [tool.pytest.ini_options]

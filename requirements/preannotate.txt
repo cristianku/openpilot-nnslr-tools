@@ -1,0 +1,6 @@
+# [preannotation] - START
+# Optional CPU-only inference environment; core/CLI imports remain stdlib-only.
+onnxruntime>=1.20,<2
+Pillow>=11,<13
+numpy>=1.26,<3
+# [preannotation] - END

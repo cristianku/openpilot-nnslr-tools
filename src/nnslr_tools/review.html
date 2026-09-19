@@ -1,0 +1,72 @@
+<!-- [preannotation] - START -->
+<!doctype html><html lang="it"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NNSLR · Revisione cartelli</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#111722;color:#edf2f8}body{margin:0;padding:24px;max-width:1600px;margin:auto}h1{font-size:24px;margin:0 0 8px}p{line-height:1.5;color:#b7c7d9}.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}button,select,input{font:inherit;background:#243349;color:#fff;border:1px solid #52647a;border-radius:6px;padding:8px}button{cursor:pointer}button:disabled{opacity:.4;cursor:default}.primary{background:#126e55}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px}svg{width:100%;background:#06090e;touch-action:none}aside{padding:12px;background:#192332;border-radius:8px}label{display:block;margin-bottom:12px}input,select{max-width:100%;box-sizing:border-box}#value{width:100px}.box{fill:#ffcd4612;stroke:#ffcd46;stroke-width:3;cursor:pointer}.box.selected{stroke:#3cf2be;stroke-width:5}#boxes button{display:block;text-align:left;width:100%;margin:5px 0}.note{font-size:14px}#status{color:#76e3bd}.warning{color:#ffd482}#editor{display:none}@media(max-width:850px){.layout{grid-template-columns:1fr}body{padding:12px}}
+</style>
+<h1>NNSLR · Revisione cartelli</h1>
+<p>Proposte automatiche da un modello addestrato in Vietnam, non validato sulle strade svizzere.
+Conferma solo ciò che riesci a vedere. Il numero proposto non è il limite applicabile alla vettura.</p>
+<div class="toolbar"><button id="prev">← Precedente</button><span id="position"></span><button id="next">Successivo →</button><label style="margin:0"><input type="checkbox" id="only"> Solo frame con proposte</label><button id="export">Scarica revisioni JSONL</button></div>
+<p id="status"></p><p class="note">Le modifiche sono salvate in questo browser. Esporta il JSONL per conservarle fuori dal browser; il file originale delle proposte resta invariato. Un frame senza riquadri non è automaticamente un esempio negativo: va controllato e confermato.</p>
+<div class="layout"><main><svg id="scene" xmlns="http://www.w3.org/2000/svg" aria-label="Fotogramma e riquadri"><image id="photo" x="0" y="0"/><g id="overlays"></g><rect id="draft" fill="#40ddb322" stroke="#40ddb3" stroke-width="3" visibility="hidden"/></svg></main><aside>
+<div class="toolbar"><button id="add">Aggiungi riquadro</button><button id="confirm" class="primary">Conferma fotogramma</button></div>
+<p id="frameInfo" class="note"></p><p id="mode" class="warning"></p><div id="boxes"></div>
+<div id="editor"><label>Tipo <select id="family"><option value="maximum_speed">Limite massimo</option><option value="cancellation">Fine limitazione</option><option value="zone">Zona</option><option value="variable_display">Segnale variabile</option><option value="other_sign">Altro cartello</option><option value="unreadable">Illeggibile</option></select></label>
+<label>Valore km/h (vuoto = sconosciuto) <input id="value" type="number" min="1" max="200" step="1"></label>
+<p class="note">Per correggere un riquadro: eliminalo e disegnalo di nuovo.</p><button id="remove">Elimina proposta</button><p id="evidence" class="note"></p></div>
+<p class="note">Strada di appartenenza, pannelli supplementari e istante di passaggio restano non risolti. Queste revisioni non costituiscono ancora un dataset validato per il training.</p>
+</aside></div>
+<script type="application/json" id="payload">__NNSLR_DATA__</script>
+<script>
+'use strict';
+const data=JSON.parse(document.getElementById('payload').textContent), rows=data.frames;
+const el=id=>document.getElementById(id), key='nnslr-review-v1-'+data.run_id;
+let edits={};try{edits=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
+let cursor=0, selected=-1, adding=false, start=null;
+const ns='http://www.w3.org/2000/svg';
+function indices(){return rows.map((r,i)=>i).filter(i=>!el('only').checked||rows[i].detections.length>0)}
+function current(){return rows[indices()[cursor]]}
+function state(){const r=current();if(!r)return null;if(!edits[r.frame_key])edits[r.frame_key]={review_state:'pending',detections:JSON.parse(JSON.stringify(r.detections))};return edits[r.frame_key]}
+function store(){try{localStorage.setItem(key,JSON.stringify(edits))}catch(e){el('status').textContent='Salvataggio nel browser non disponibile: scarica il JSONL prima di chiudere.'}}
+function dirty(){state().review_state='pending';store();render()}
+function svgNode(tag,attrs){const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,String(v));return n}
+function name(d){return d.family+(d.value_kph==null?'':' · '+d.value_kph+' km/h')}
+function render(){
+ const ids=indices(),r=current();el('position').textContent=ids.length?`${cursor+1} / ${ids.length}`:'Nessun fotogramma';
+ el('prev').disabled=cursor<=0;el('next').disabled=cursor>=ids.length-1;el('confirm').disabled=!r;el('add').disabled=!r;
+ el('overlays').replaceChildren();el('boxes').replaceChildren();el('editor').style.display='none';
+ if(!r){el('photo').removeAttribute('href');el('frameInfo').textContent='';return}
+ const s=state();el('scene').setAttribute('viewBox',`0 0 ${r.width} ${r.height}`);el('photo').setAttribute('href',r.preview_path);el('photo').setAttribute('width',r.width);el('photo').setAttribute('height',r.height);
+ const checked=Object.values(edits).filter(x=>x.review_state==='reviewed').length;
+ el('status').textContent=`${checked} / ${rows.length} fotogrammi revisionati. Proposte originali: ${rows.reduce((n,r)=>n+r.detections.length,0)}.`;
+ el('frameInfo').textContent=`Segmento ${r.segment_index} · immagine ${r.output_index} · ${r.width}×${r.height} · ${s.review_state==='reviewed'?'confermato':'da verificare'}`;
+ el('confirm').textContent=s.review_state==='reviewed'?'Fotogramma confermato ✓':'Conferma fotogramma';
+ el('mode').textContent=adding?'Trascina sull’immagine per disegnare un riquadro.':'';
+ s.detections.forEach((d,i)=>{
+  const [x1,y1,x2,y2]=d.bbox_xyxy,g=svgNode('g',{}),b=svgNode('rect',{x:x1,y:y1,width:x2-x1,height:y2-y1,class:'box'+(i===selected?' selected':'')});
+  const t=svgNode('text',{x:x1,y:Math.max(18,y1-6),fill:'#ffed9b','font-size':18,'paint-order':'stroke',stroke:'#111','stroke-width':3});t.textContent=(i+1)+' · '+name(d);g.append(b,t);
+  g.addEventListener('click',()=>{if(!adding){selected=i;render()}});el('overlays').append(g);
+  const button=document.createElement('button');button.textContent=(i+1)+' · '+name(d)+(d.score==null?'':` (${Math.round(d.score*100)}%)`);button.onclick=()=>{selected=i;render()};el('boxes').append(button);
+ });
+ if(selected>=0&&s.detections[selected]){const d=s.detections[selected];el('editor').style.display='block';el('family').value=d.family;el('value').value=d.value_kph??'';el('evidence').textContent=d.model_label?'Proposta originale: '+d.model_label:'Riquadro aggiunto manualmente';}
+}
+el('prev').onclick=()=>{cursor--;selected=-1;adding=false;render()};el('next').onclick=()=>{cursor++;selected=-1;adding=false;render()};el('only').onchange=()=>{cursor=0;selected=-1;adding=false;render()};
+el('add').onclick=()=>{adding=!adding;selected=-1;render()};
+el('confirm').onclick=()=>{state().review_state='reviewed';store();render()};
+el('remove').onclick=()=>{state().detections.splice(selected,1);selected=-1;dirty()};
+el('family').onchange=()=>{const d=state().detections[selected];d.family=el('family').value;if(!['maximum_speed','zone','variable_display'].includes(d.family))d.value_kph=null;d.value_state=d.value_kph==null?'unknown':'reviewed';dirty()};
+el('value').onchange=()=>{const raw=el('value').value,n=Number(raw);if(raw!==''&&(!Number.isInteger(n)||n<=0||n>200)){el('value').reportValidity();render();return}const d=state().detections[selected];if(raw!==''&&!['maximum_speed','zone','variable_display'].includes(d.family)){alert('Seleziona un tipo con valore numerico.');render();return}d.value_kph=raw===''?null:n;d.value_state=d.value_kph==null?'unknown':'reviewed';dirty()};
+function point(e){const p=el('scene').createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(el('scene').getScreenCTM().inverse()),r=current();return [Math.max(0,Math.min(r.width,q.x)),Math.max(0,Math.min(r.height,q.y))]}
+el('scene').onpointerdown=e=>{if(!adding||!current())return;e.preventDefault();start=point(e);el('scene').setPointerCapture(e.pointerId);el('draft').setAttribute('visibility','visible');draw(start)};
+function draw(p){const [x,y]=start;for(const [k,v]of Object.entries({x:Math.min(x,p[0]),y:Math.min(y,p[1]),width:Math.abs(x-p[0]),height:Math.abs(y-p[1])}))el('draft').setAttribute(k,v)}
+el('scene').onpointermove=e=>{if(start)draw(point(e))};
+el('scene').onpointerup=e=>{if(!start)return;const p=point(e),box=[Math.min(start[0],p[0]),Math.min(start[1],p[1]),Math.max(start[0],p[0]),Math.max(start[1],p[1])];start=null;el('draft').setAttribute('visibility','hidden');if(box[2]-box[0]>=2&&box[3]-box[1]>=2){const s=state();s.detections.push({bbox_xyxy:box,family:'unreadable',value_kph:null,value_state:'unknown',score:null,model_label:null,class_id:null,review_state:'pending',applicability:'unresolved',supplementary_panel:'unknown',detection_id:'manual-'+Date.now()});selected=s.detections.length-1;adding=false;dirty()}};
+el('scene').onpointercancel=()=>{start=null;el('draft').setAttribute('visibility','hidden')};
+el('export').onclick=()=>{
+ const reviewed=rows.filter(r=>edits[r.frame_key]?.review_state==='reviewed').map(r=>({...r,kind:'reviewed_frame',ground_truth:false,training_ready:false,review_state:'reviewed',label_basis:'human_review',source_proposals:r.detections,detections:edits[r.frame_key].detections.map(d=>({...d,review_state:'reviewed',value_state:d.value_kph==null?'unknown':'reviewed'}))}));
+ if(!reviewed.length){alert('Conferma almeno un fotogramma prima di esportare.');return}
+ const url=URL.createObjectURL(new Blob([reviewed.map(r=>JSON.stringify(r)).join('\n')+'\n'],{type:'application/x-ndjson'})),a=document.createElement('a');a.href=url;a.download='annotations-'+data.run_id+'.jsonl';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};render();
+</script></html>
+<!-- [preannotation] - END -->
