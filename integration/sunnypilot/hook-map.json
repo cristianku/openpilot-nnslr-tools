@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "repository": "cristianku/sunnypilot",
+    "upstream_repository": "sunnypilot/sunnypilot",
+    "commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56"
+  },
+  "hooks": [
+    {
+      "id": "schema.custom",
+      "path": "openpilot/cereal/custom.capnp",
+      "anchors": ["struct CarStateSP", "struct LiveMapDataSP", "struct LongitudinalPlanSP"],
+      "required": true
+    },
+    {
+      "id": "schema.event_union",
+      "path": "openpilot/cereal/log.capnp",
+      "anchors": ["carStateSP @114", "liveMapDataSP @115", "customReserved10 @136"],
+      "required": true
+    },
+    {
+      "id": "services",
+      "path": "openpilot/cereal/services.py",
+      "anchors": ["\"carStateSP\"", "\"liveMapDataSP\"", "\"modelDataV2SP\""],
+      "required": true
+    },
+    {
+      "id": "manager.processes",
+      "path": "openpilot/system/manager/process_config.py",
+      "anchors": ["procs = [", "PythonProcess(\"modeld\"", "procs += ["],
+      "required": true
+    },
+    {
+      "id": "ui.state",
+      "path": "openpilot/selfdrive/ui/sunnypilot/ui_state.py",
+      "anchors": ["self.sm_services_ext", "\"carStateSP\"", "\"liveMapDataSP\""],
+      "required": true
+    },
+    {
+      "id": "ui.speed_limit",
+      "path": "openpilot/selfdrive/ui/sunnypilot/onroad/speed_limit.py",
+      "anchors": ["class SpeedLimitRenderer", "longitudinalPlanSP", "liveMapDataSP"],
+      "required": true
+    },
+    {
+      "id": "runner.stock",
+      "path": "openpilot/selfdrive/modeld/modeld.py",
+      "anchors": ["# visionipc clients", "VisionIpcClient(\"camerad\""],
+      "required": true
+    },
+    {
+      "id": "speed_limit.resolver",
+      "path": "openpilot/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py",
+      "anchors": ["class SpeedLimitResolver", "_get_from_car_state", "_get_from_map_data"],
+      "required": true
+    },
+    {
+      "id": "gitmodules.neural_network_data",
+      "path": ".gitmodules",
+      "anchors": ["sunnypilot/neural_network_data", "https://github.com/sunnypilot/neural-network-data.git"],
+      "required": true
+    }
+  ]
+}
