@@ -24,6 +24,9 @@ env/
 *.log
 
 # --- ML / project-generated data (never version) ---
+# [local-output] - START
+/output/
+# [local-output] - END
 datasets/
 data/
 videos/

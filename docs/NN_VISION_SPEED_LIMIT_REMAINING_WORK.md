@@ -808,3 +808,40 @@ real route
 ```
 
 Until a real model bundle exists, the Sunnypilot runtime should remain fail-closed and report Vision as unavailable rather than fabricating a speed limit.
+
+<!-- [preannotation] - START -->
+### Pretrained annotation assistance
+
+`nnslr preannotate --route ID` and `nnslr review --route ID` now provide
+CPU-only model proposals and browser review with the standard data-root
+default. Sign detection uses a pinned Vietnam YOLO ONNX export. Asphalt OCR
+uses PP-OCRv4 and a pinned Cityscapes road-segmentation model: numeric text
+must pass an independent road-surface/context check before becoming a
+`road_marking_candidate`. It is never automatically an applicable limit.
+
+The UI supports box addition/removal, class/value corrections, explicit frame
+confirmation, browser persistence and export of confirmed frames with original
+proposal provenance. Unreviewed and empty model outputs are not ground truth.
+
+Local CPU validation (2026-09-19): all 198 extracted route frames completed,
+with 100 proposals across 69 frames. Four proposals were road-number candidates
+(all 30), including the requested segment-0 frame 27 and two following frames.
+The additional road proposal was visually checked on a separate zone-30 marking.
+This is successful execution and a small positive check, not an accuracy metric.
+Synthetic perfect-score OCR readings placed in actual wall/advertisement/parked
+vehicle mask regions were rejected; the asphalt region was accepted.
+
+The regression run passed 165 tests, including optional real Chrome review/export
+and storage-failure checks; seven optional log-parser tests were skipped because
+their separate environment was not configured. The core selftest passed all 18
+checks. A real-image browser check also exercised box drawing/removal, value
+correction, confirmation reset, reload persistence and export. No container or
+comma installation was performed for this extension.
+
+Still outstanding: curated positive/negative validation across scenes,
+Swiss sign-domain assessment, sequence consistency and road applicability,
+review export import into the canonical annotation schema, source-frame/time
+alignment, dataset validation/splits and actual training. The OCR/segmentation
+scores do not establish these properties. See README for commands, model
+provenance and the external weights' license constraints.
+<!-- [preannotation] - END -->

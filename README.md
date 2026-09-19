@@ -261,6 +261,83 @@ and video/log alignment stages respectively. Single-video processing remains
 available with `--video FILE --output DIRECTORY`.
 <!-- [route-extract] - END -->
 
+<!-- [preannotation] - START -->
+## Pretrained proposals and visual review (CPU)
+
+Install the optional inference dependencies once, from this repository in the
+active nnslr virtual environment:
+
+```sh
+python -m pip install '.[preannotate]'
+```
+
+After extracting a route, these commands process all its frames and open the
+review server. No environment variables, output directories or segment loop
+are required; the default data root is `/srv/nnslr-data`.
+
+```sh
+nnslr preannotate --route 00000089--0ac1c0fdec
+nnslr review --route 00000089--0ac1c0fdec
+```
+
+Open `http://127.0.0.1:8765` in the browser. When running in the container, start
+review from your Mac through an SSH tunnel instead:
+
+```sh
+ssh -L 8765:127.0.0.1:8765 openpilot-nnslr 'bash -lic "nnslr review --route 00000089--0ac1c0fdec"'
+```
+
+Then open the same local browser address. The server binds to loopback by
+default and serves only the report and its image previews. Stop with Ctrl+C.
+
+The first preannotation run downloads checksum-pinned ONNX weights under
+`models/preannotation/` inside the data root; subsequent runs use that cache.
+Inference uses CPU only in an isolated subprocess. Every run preserves the
+previous results and writes a new directory under `derived/preannotations/`.
+The review command selects the latest completed run automatically.
+
+The page shows native-resolution boxes and proposed values. You can change
+the type/value, delete false positives, draw missed boxes, and confirm each
+frame. Edits persist in that browser. **Download the reviewed JSONL** to keep
+them outside browser storage. Only explicitly confirmed frames are exported;
+a frame with no proposals is never automatically a negative training example.
+Exports retain the original proposals and remain `training_ready: false` until
+alignment, annotation schema and dataset validation are completed.
+
+### What the models recognize
+
+- Vertical signs: a pretrained 82-class Vietnam sign detector, applied to the
+  whole frame plus overlapping native-resolution tiles. Swiss accuracy is
+  **not established**. A numeric OCR reading is not used as a vertical sign.
+- Asphalt numbers: PP-OCRv4 reads the lower half with 3x vertical expansion.
+  A separate Cityscapes SegFormer model identifies the road surface. At least
+  95% of the number box **including surrounding context** must lie on pixels
+  classified as road with score at least 0.9. Missing/uncertain road evidence
+  rejects the reading. Wall, advertising, vehicle and sidewalk regions are
+  excluded when segmentation identifies them correctly.
+- An accepted asphalt number is a `road_marking_candidate`, not an established
+  speed limit. OCR score is not a probability of being a speed sign. Surface
+  segmentation can still fail; arbitrary numbers painted on roads, adjacent
+  roads and ambiguous markings require human review. This is dataset
+  preparation, with no vehicle-control or runtime integration.
+
+### Model provenance and usage constraints
+
+Model repositories, revisions, checksums, preprocessing and provenance are
+recorded in each run and each frame. External weights and private images are
+not committed to this repository.
+
+| Component | Source | License information |
+| --- | --- | --- |
+| Sign detector | [star092304/traffic-sign-detection-vietnam-yolo](https://huggingface.co/star092304/traffic-sign-detection-vietnam-yolo) | Model card says Apache-2.0; embedded ONNX metadata says AGPL-3.0. This discrepancy is recorded, not resolved by this tool. |
+| Road segmentation | [Xenova SegFormer ONNX](https://huggingface.co/Xenova/segformer-b0-finetuned-cityscapes-1024-1024), from NVIDIA SegFormer | [NVIDIA license](https://github.com/NVlabs/SegFormer/blob/master/LICENSE) limits use to non-commercial research/evaluation. |
+| OCR | [RapidOCR 3.4.0](https://pypi.org/project/rapidocr/3.4.0/) bundled PP-OCRv4 | Apache-2.0; bundled model hashes are checked before use. |
+
+These are research/evaluation aids for producing reviewed annotations, not a
+validated model bundle for deployment. The pretrained components have their
+own terms; the repository's MIT license does not replace them.
+<!-- [preannotation] - END -->
+
 ## T2 local comma video/log pipeline
 
 These commands operate only on files already copied under local storage. They
@@ -277,6 +354,8 @@ do **not** SSH to, download from, or modify a comma device.
 | `nnslr align-route` | Join ffprobe presentation order to openpilot `EncodeIndex.segmentId`; preserve unresolved frames explicitly. |
 | `nnslr alignment-report` | Print deterministic alignment diagnostics. |
 | `nnslr find-candidates` | Use map speed transitions as search hints only, never ground truth. |
+| `nnslr preannotate` | Propose sign boxes and road-surface-gated asphalt numbers on extracted route frames, using optional CPU models. |
+| `nnslr review` | Review the latest route proposals in a local browser and export confirmed annotations. |
 | `nnslr make-clips` | Build local review clips around projected candidate times. |
 <!-- [route-extract] - END -->
 

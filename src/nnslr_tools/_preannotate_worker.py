@@ -35,6 +35,8 @@ def run(request):
     names=ast.literal_eval(session.get_modelmeta().custom_metadata_map['names'])
     if set(names)!=set(range(82)) or not all(isinstance(v,str) for v in names.values()):
         raise ValueError('invalid class metadata')
+    from nnslr_tools._road_text_worker import RoadTextDetector
+    road_text=RoadTextDetector(request['road_model_path'])
     output=Path(request['output']); (output/'images').mkdir()
     root=Path(request['data_root'])
     with (output/'preannotations.jsonl').open('w') as manifest:
@@ -68,6 +70,7 @@ def run(request):
                                        'review_state':'pending','applicability':'unresolved',
                                        'supplementary_panel':'unknown'})
             detections=suppress_overlaps(detections)
+            detections.extend(road_text.detect(image))
             for i,item in enumerate(detections):
                 item['detection_id']=f"{frame['frame_key']}/{i}"
             preview=f'images/{ordinal:08}.jpg'
@@ -75,6 +78,7 @@ def run(request):
             row={**frame,'schema_version':1,'kind':'preannotated_frame','run_id':request['run_id'],
                  'width':width,'height':height,'preview_path':preview,'detections':detections,
                  'review_state':'pending','ground_truth':False,'model':request['model'],
+                 'road_model':request['road_model'],'ocr':request['ocr'],
                  'inference':{'provider':'CPUExecutionProvider','confidence':request['confidence'],
                               'nms_iou':.5,'tiles':len(tile_boxes(width,height))}}
             manifest.write(json.dumps(row,allow_nan=False)+'\n'); manifest.flush()
