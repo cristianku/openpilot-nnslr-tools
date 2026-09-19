@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "baseline_runtime_commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56",
+  "state": "assigned",
+  "bindings": [
+    {
+      "service": "speedVisionState",
+      "event_union_ordinal": 136,
+      "custom_type": "SpeedVisionState",
+      "custom_type_id": "0xcb9fd56c7057593a",
+      "service_frequency_hz": 10,
+      "default_logged": false,
+      "source_reserved_binding": "customReserved10"
+    }
+  ],
+  "invariants": [
+    "CarStateSP.speedLimit is not written by NNSLR",
+    "LiveMapDataSP speed-limit fields are not written by NNSLR",
+    "SpeedLimitResolver has no speedVisionState input",
+    "value presence is represented by hasValue; zero is not interpreted as a limit"
+  ]
+}
