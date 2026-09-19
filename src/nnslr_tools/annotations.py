@@ -153,6 +153,8 @@ def validate_annotation(row: dict, root: Path, *, dataset_kind: str = 'gold') ->
         for field in ('review_model', 'review_model_version'):
             require(isinstance(provenance.get(field), str) and bool(provenance[field].strip()),
                     "missing_provenance", field)
+        require(provenance['review_model_version'] not in ('main', 'master', 'latest'),
+                'missing_provenance', 'immutable review_model_version required')
         require(_hash(provenance.get('review_model_sha256')), "missing_provenance", "review_model_sha256")
         confidence = provenance.get('confidence')
         require(type(confidence) in (int, float) and not isinstance(confidence, bool) and math.isfinite(confidence)
@@ -271,7 +273,7 @@ def _canonical(frame: dict, detection: dict | None, original: dict | None, sourc
     provenance = {'label_basis': 'model_review' if model else 'human_review', 'source_review_sha256': source_hash,
                   'original_proposal': original, 'source_model': frame.get('model'), 'run_id': frame.get('run_id')}
     if model:
-        provenance.update({k: frame[k] for k in ('review_model', 'review_model_version', 'review_model_sha256', 'confidence')})
+        provenance.update({k: frame.get(k) for k in ('review_model', 'review_model_version', 'review_model_sha256', 'confidence')})
     # [model-review] - END
     return {
         'schema_version': MODEL_SCHEMA_VERSION if model else SCHEMA_VERSION,
@@ -283,7 +285,7 @@ def _canonical(frame: dict, detection: dict | None, original: dict | None, sourc
         'applicability': d.get('applicability', 'unresolved'), 'supplementary_panel': d.get('supplementary_panel', 'unknown'),
         'visibility': d.get('visibility', 'unknown'), 'occlusion': d.get('occlusion', 'unknown'),
         'temporary': d.get('temporary'), 'variable_display': d.get('variable_display'),
-        'proposal_source': 'preannotation:' + str(frame.get('run_id')) if original else 'human',
+        'proposal_source': 'preannotation:' + str(frame.get('run_id')) if original else 'model_review' if model else 'human',
         'proposal_score': original.get('score') if original else None,
         'review_state': 'rejected' if rejected else 'accepted' if negative or unchanged else 'corrected',
         'notes': d.get('notes', frame.get('notes', '')),
@@ -309,10 +311,19 @@ def import_reviews(inputs: list[Path], root: Path, output: Path, *, dataset_kind
                 imported.append(frame)
                 continue
             # [model-review] - START
-            require(frame.get('kind') == 'reviewed_frame' and frame.get('review_state') in ('reviewed', 'resolved')
-                    and frame.get('label_basis') in ('human_review', 'model_review'), 'unreviewed_proposal', path.name)
-            if frame.get('label_basis') == 'model_review':
-                require(dataset_kind == 'training-candidate', 'model_review_not_gold', path.name)
+            if dataset_kind == 'gold':
+                require(frame.get('kind') == 'reviewed_frame' and frame.get('review_state') == 'reviewed'
+                        and frame.get('label_basis') == 'human_review', 'unreviewed_proposal', path.name)
+            else:
+                require(frame.get('kind') == 'reviewed_frame' and frame.get('review_state') == 'reviewed'
+                        and frame.get('label_basis') in ('human_review', 'model_review'), 'unreviewed_proposal', path.name)
+                if frame.get('label_basis') == 'model_review':
+                    for field in ('review_model', 'review_model_version'):
+                        require(isinstance(frame.get(field), str) and bool(frame[field].strip()), 'missing_provenance', field)
+                    require(_hash(frame.get('review_model_sha256')), 'missing_provenance', 'review_model_sha256')
+                    confidence = frame.get('confidence')
+                    require(type(confidence) in (int, float) and not isinstance(confidence, bool)
+                            and math.isfinite(confidence) and 0 <= confidence <= 1, 'invalid_confidence', str(confidence))
             # [model-review] - END
             require(isinstance(frame.get('route_id'), str) and isinstance(frame.get('camera_stream'), str)
                     and _integer(frame.get('segment_index')) and _integer(frame.get('output_index')),

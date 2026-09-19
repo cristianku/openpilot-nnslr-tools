@@ -38,7 +38,7 @@ def connected_groups(rows: list[dict]) -> list[list[dict]]:
     return [sorted(group, key=lambda r: r['annotation_id']) for group in groups.values()]
 
 
-def validate_splits(rows: list[dict], split: dict, dataset_sha256: str) -> list[dict]:
+def validate_splits(rows: list[dict], split: dict, dataset_sha256: str, *, dataset_kind: str = 'gold') -> list[dict]:
     errors = []
     if not isinstance(split, dict) or split.get('schema_version') != 1 or not isinstance(split.get('assignments'), dict):
         return [{'reason': 'invalid_split_schema'}]
@@ -47,6 +47,8 @@ def validate_splits(rows: list[dict], split: dict, dataset_sha256: str) -> list[
     split_kind = split.get('dataset_kind', 'gold')
     if split_kind not in ('gold', 'training-candidate'):
         return [{'reason': 'unknown_dataset_kind', 'detail': str(split_kind)}]
+    if split_kind != dataset_kind:
+        return [{'reason': 'split_kind_mismatch', 'detail': 'split and dataset purposes differ'}]
     model_rows = [r for r in rows if isinstance(r.get('provenance'), dict) and r['provenance'].get('label_basis') == 'model_review']
     if split_kind == 'gold' and model_rows:
         return [{'reason': 'split_kind_mismatch', 'detail': 'gold split cannot cover model-reviewed rows'}]
@@ -99,7 +101,7 @@ def build_splits(rows: list[dict], root: Path, *, seed: int = 0, output: Path | 
                'counts': {name: sum(s == name for s in assignments.values()) for name in SPLITS},
                'warnings': report['warnings'], 'leakage_checked': True,
                'hard_negative_policy': 'reserve complete connected groups containing reviewed negatives; positive controls stay in the same partition'}
-    errors = validate_splits(rows, payload, report['dataset_sha256'])
+    errors = validate_splits(rows, payload, report['dataset_sha256'], dataset_kind=dataset_kind)
     require(not errors, 'split_leakage', json.dumps(errors))
     content = (json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
     digest = hashlib.sha256(content).hexdigest()

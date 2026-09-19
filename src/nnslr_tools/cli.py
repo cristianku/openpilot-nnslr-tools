@@ -891,7 +891,7 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
                 # [model-review] - END
                 if args.splits and report["valid"]:
                     from nnslr_tools.splits import validate_splits
-                    report["errors"].extend(validate_splits(rows, json.loads(Path(args.splits).read_text()), report["dataset_sha256"]))
+                    report["errors"].extend(validate_splits(rows, json.loads(Path(args.splits).read_text()), report["dataset_sha256"], dataset_kind=kind))
                     report["valid"] = not report["errors"]
     except (ValueError, OSError) as exc:
         report = {"valid": False, "errors": [{"reason": getattr(exc, "reason", "dataset_io_error"), "detail": str(exc)}]}

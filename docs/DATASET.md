@@ -85,3 +85,70 @@ model or a human-reviewed Swiss corpus. Human annotation, independent visual
 synchronization measurements, dataset coverage and a frozen model I/O contract
 are still required before the baseline training milestone.
 <!-- [reviewed-dataset] - END -->
+
+<!-- [model-review] - START -->
+## Automatic review and candidate data
+
+`--dataset-kind training-candidate` explicitly permits model-reviewed rows in
+`import-annotations`, `validate-dataset` and `build-splits`. Its default output
+is `<data-root>/datasets/training_candidate_dataset/objects.jsonl`; gold remains
+the default mode and accepts human review only. Gold validation rejects model
+rows even when imported directly as canonical annotations. Candidate split
+metadata cannot be presented as gold, and all five route/site/image-disjoint
+partitions are still required.
+
+Human canonical rows retain schema version 1. Model rows use version 2 and
+require `provenance.label_basis=model_review`, a source-review SHA256,
+`review_model`, immutable `review_model_version`, `review_model_sha256`, finite
+`confidence` in [0,1], a matching `reviewer=codex/<review_model>`, an aware review
+timestamp and verified image hash. Reviewed-frame imports carry model fields
+at the top level; the importer transfers them to canonical provenance.
+Pending/unresolved reviews cannot be imported. Model confidence is a model
+assertion, not calibrated accuracy or human ground truth.
+
+Run the automatic reviewer **on the data host**, with an already-running local
+llama.cpp vision server and verified model metadata:
+
+```sh
+python -m nnslr_tools.model_review /path/to/preannotations.jsonl \
+  --data-root /path/to/data \
+  --output /path/to/data/review/run-name \
+  --model-metadata /path/to/review-model.json \
+  --server-metadata /path/to/review-server.json
+```
+
+`--limit 3` produces an explicitly sampled pilot. Without a limit all supplied
+frames are reviewed. The endpoint is loopback-only; no image goes to a remote
+API. Pillow comes from the existing optional `preannotate` dependency profile.
+The worker does not download models, launch servers, access devices or start
+training. Server metadata binds PID/argv/port to the actual process and the
+model/projector files; model metadata includes model ID, pinned revision,
+asset filenames/SHA256s, directory and bundle SHA256 (SHA256 of the sorted,
+compact JSON asset-hash dictionary).
+
+The current input is the existing bootstrap preannotator, **not a trained
+NNSLR predictor**. Every audit row marks this comparison scope and records
+`nnslr.available=false`. Thus the resulting discrepancy counts are not NNSLR
+precision/recall measurements. Ordinary `other_sign` proposals are outside
+the speed comparison vocabulary but remain in the original evidence.
+
+Pass 1 sees the full frame without prediction labels. Pass 2 sees a full frame
+plus an unlabeled proposal crop, or four overlapping tiles covering the frame.
+This is a different visual method using the same reviewer, so its errors are
+correlated. Both raw responses, transforms, prompts, times and model identity
+are retained. Multiple objects, conflicting confident answers and unreadable
+values remain unresolved. Only confirmed negatives and single objects whose
+proposal crop is explicitly associated with the answer become candidates.
+False negatives with no verified box stay audit-only. No coordinate is invented.
+
+Each run keeps `run.json`, immutable input/model/prompt/source binding,
+per-frame checkpoints, and `final/report/{audit.jsonl,report.html,run.json}`
+with category manifests. `final/candidate_reviews.jsonl`, a separate canonical
+candidate dataset, `validation.json` and `splits.json` record downstream
+results. Rerunning the same command resumes completed frames; a changed
+binding requires a new output directory. Missing inputs or failed model calls
+stop the run with an explicit UNAVAILABLE checkpoint, which is retried on
+resume. Failed/insufficient splits are reported without randomizing adjacent
+frames. No model review closes missing capture-time provenance, the human
+gold-set gate, Swiss coverage or the unimplemented training/evaluation stages.
+<!-- [model-review] - END -->
