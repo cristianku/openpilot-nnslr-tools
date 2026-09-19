@@ -120,3 +120,26 @@ def prepare_run(
         requested_upstream_ref=upstream_ref,
         requested_upstream_sha=upstream_sha,
     )
+
+
+def load_prepared_run(run_dir: Path) -> PreparedRun:
+    run_dir = Path(run_dir).resolve()
+    path = run_dir / "run.json"
+    if not path.is_file():
+        raise PrepareError(f"run receipt not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise PrepareError(f"invalid run receipt: {exc}") from exc
+    baseline = Path(payload.get("baseline_dir", "")).resolve()
+    candidate = Path(payload.get("candidate_dir", "")).resolve()
+    if not baseline.is_dir() or not candidate.is_dir():
+        raise PrepareError("prepared baseline/candidate checkout is missing")
+    return PreparedRun(
+        run_dir=run_dir,
+        baseline_dir=baseline,
+        candidate_dir=candidate,
+        resolved_upstream_commit=str(payload.get("resolved_upstream_commit", "")),
+        requested_upstream_ref=payload.get("requested_upstream_ref"),
+        requested_upstream_sha=payload.get("requested_upstream_sha"),
+    )
