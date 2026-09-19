@@ -78,7 +78,7 @@ def test_defaults_copy_only_front_and_full_log_for_selected_route(source, capfd)
     code, out, err = run(capfd)
     assert code == 0, err
     report = json.loads(out)
-    assert report["host"] == "comma-remote"
+    assert report["host"] == "comma"
     assert report["segments"] == [0, 2]
     assert report["ok"] is True
     dest = root / "raw" / "routes" / ROUTE

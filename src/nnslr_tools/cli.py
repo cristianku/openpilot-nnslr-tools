@@ -626,7 +626,7 @@ def build_parser() -> argparse.ArgumentParser:
     # [nnslr-sync] - START
     p_sync = sub.add_parser("sync-routes", help="copy one comma route via SSH/rsync (front camera + full log)")
     p_sync.add_argument("--route", required=True, help="route ID to copy (always explicit)")
-    p_sync.add_argument("--host", help="SSH alias, hostname, IPv4 or user@host (default: NNSLR_COMMA_HOST or comma-remote)")
+    p_sync.add_argument("--host", help="SSH alias, hostname, IPv4 or user@host (default: NNSLR_COMMA_HOST or comma)")
     p_sync.add_argument("--segments", default="all", help="all (default), 0-3, or 0,2,4-6")
     p_sync.add_argument("--camera", choices=("narrow", "wide", "both"), default="narrow",
                         help="narrow=fcamera (default), wide=ecamera, both=both road cameras")

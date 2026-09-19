@@ -134,7 +134,7 @@ The §7 contract (`speed_vision_core.types`) enforces, among other things:
 <!-- [nnslr-sync] - START -->
 ## Copy a route from the comma
 
-With an existing SSH alias `comma-remote`, only the route is required:
+With an existing SSH alias `comma`, only the route is required:
 
 ```sh
 nnslr sync-routes --route "$ROUTE"
@@ -144,7 +144,7 @@ Defaults:
 
 | Setting | Default |
 | --- | --- |
-| SSH host | `NNSLR_COMMA_HOST`, otherwise `comma-remote` |
+| SSH host | `NNSLR_COMMA_HOST`, otherwise `comma` |
 | Segments | All available segments of the specified route only |
 | Camera | `narrow`: `fcamera.hevc` (front road camera) |
 | Log | Full `rlog`, preferring `rlog.zst`, then `rlog`, then `rlog.bz2` |
@@ -162,7 +162,7 @@ nnslr sync-routes --route "$ROUTE" --host comma@192.0.2.10 --segments 0-3
 nnslr sync-routes --route "$ROUTE" --camera both --data-root /path/to/speed-vision-data
 
 # Set preferences once in your shell configuration instead of repeating options.
-export NNSLR_COMMA_HOST=comma-remote
+export NNSLR_COMMA_HOST=comma
 export NNSLR_DATA_ROOT=/path/to/speed-vision-data
 ```
 

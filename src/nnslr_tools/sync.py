@@ -17,7 +17,7 @@ from typing import Any
 
 from nnslr_tools.manifest import parse_route_id, sha256_of
 
-DEFAULT_HOST = "comma-remote"
+DEFAULT_HOST = "comma"
 DEFAULT_DATA_ROOT = "/srv/nnslr-data"
 REMOTE_ROOT = "/data/media/0/realdata"
 _CAMERAS = {"narrow": ("fcamera.hevc",), "wide": ("ecamera.hevc",),
