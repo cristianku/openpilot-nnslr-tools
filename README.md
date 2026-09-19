@@ -69,8 +69,12 @@ nnslr selftest
 pytest -q
 ```
 
+<!-- [nnslr-sync] - START -->
 Expected: `nnslr selftest` prints `selftest OK: 18 checks` and `pytest -q`
-reports `90 passed`.
+passes. Sync integration tests use local fixtures and real rsync, with SSH
+transport replaced; they are skipped if rsync is not installed. No test
+connects to a comma device.
+<!-- [nnslr-sync] - END -->
 
 > `nnslr env` reports the environment machine-readably. It marks the GPU as
 > **untested** and never probes it implicitly — GPU support is only established
@@ -78,17 +82,23 @@ reports `90 passed`.
 
 ### Data root
 
-Commands that touch real data read the root from the environment variable
-**`NNSLR_DATA_ROOT`** — it is **never hardcoded** in code (decision D4). Set it
-to the location of your speed-vision data, e.g.:
+<!-- [nnslr-sync] - START -->
+Set **`NNSLR_DATA_ROOT`** to your private data directory (decision D4), e.g.:
+<!-- [nnslr-sync] - END -->
 
 ```sh
 export NNSLR_DATA_ROOT=/path/to/speed-vision-data
 ```
 
-T2 can process comma recordings that are already present locally. It never
-connects to the comma device. For qlog/rlog parsing, point the tooling at a
-matching local openpilot/sunnypilot checkout:
+<!-- [nnslr-sync] - START -->
+`sync-routes` also works without this variable: its default is `/srv/nnslr-data`.
+An explicit `--data-root` overrides the variable. Other data-root-dependent
+commands still require the variable or their explicit `--data-root` option.
+
+The local processing commands operate on recordings already present on disk.
+Only an explicit `sync-routes` invocation connects to the comma. For qlog/rlog
+parsing, point the tooling at a matching local openpilot/sunnypilot checkout:
+<!-- [nnslr-sync] - END -->
 
 ```sh
 export NNSLR_OPENPILOT_ROOT=/path/to/openpilot
@@ -120,6 +130,66 @@ The §7 contract (`speed_vision_core.types`) enforces, among other things:
 - **No type carries a target speed or actuation request.**
 
 ---
+
+<!-- [nnslr-sync] - START -->
+## Copy a route from the comma
+
+With an existing SSH alias `comma-remote`, only the route is required:
+
+```sh
+nnslr sync-routes --route "$ROUTE"
+```
+
+Defaults:
+
+| Setting | Default |
+| --- | --- |
+| SSH host | `NNSLR_COMMA_HOST`, otherwise `comma-remote` |
+| Segments | All available segments of the specified route only |
+| Camera | `narrow`: `fcamera.hevc` (front road camera) |
+| Log | Full `rlog`, preferring `rlog.zst`, then `rlog`, then `rlog.bz2` |
+| Data root | `NNSLR_DATA_ROOT`, otherwise `/srv/nnslr-data` |
+| Destination | `<data-root>/raw/routes/<route>/<segment>/` |
+
+Override only what you need:
+
+```sh
+# Inspect the remote inventory without downloading or writing local files.
+nnslr sync-routes --route "$ROUTE" --dry-run
+
+# Use a different SSH destination, segment selection, or both road cameras.
+nnslr sync-routes --route "$ROUTE" --host comma@192.0.2.10 --segments 0-3
+nnslr sync-routes --route "$ROUTE" --camera both --data-root /path/to/speed-vision-data
+
+# Set preferences once in your shell configuration instead of repeating options.
+export NNSLR_COMMA_HOST=comma-remote
+export NNSLR_DATA_ROOT=/path/to/speed-vision-data
+```
+
+`--camera wide` selects `ecamera.hevc`, the other forward-facing, wider road
+camera. Cabin video and the reduced `qcamera.ts` are not copied. The full log
+is retained for frame/capture-time alignment and map-transition candidate
+discovery; a `qlog` is not silently substituted for it.
+
+Requires `ssh` and `rsync` locally and `rsync` on the comma. Existing SSH keys,
+host verification and `~/.ssh/config` are used; no credentials are stored by
+NNSLR. SSH runs in batch mode, so authentication must already work without an
+interactive password prompt. No device software is installed or modified.
+
+Rerun the same command to resume: interrupted files stay in `.nnslr-partial/`
+until rsync completes them. Existing destination files are checked by rsync
+content checksum and reused if identical; different files are reported as
+conflicts and never overwritten. Nothing is deleted from either dataset.
+
+Progress is written to stderr. The JSON report on stdout lists selected files,
+local SHA-256 hashes, copy/resume/reuse status and missing files/segments. Exit
+`0` means success, `1` means missing data or a file transfer/conflict failure,
+and `2` means invalid input or a preflight/SSH inventory failure. Available
+files can still be copied when other requested data is missing; after a file
+transfer failure, remaining entries stay `planned` for the next invocation.
+Dry-run contacts the host for inventory, but does not verify existing local
+content or transfer files.
+<!-- [nnslr-sync] - END -->
 
 ## T2 local comma video/log pipeline
 
@@ -196,7 +266,9 @@ nnslr extract-frames \
 `nnslr` lists these subcommands and refuses them with exit code `3` so a clean
 clone documents what does not exist rather than pretending:
 
-`check-environment` (full), `sync-routes` (remote/device data transfer remains intentionally out of scope);
+<!-- [nnslr-sync] - START -->
+`check-environment` (full);
+<!-- [nnslr-sync] - END -->
 `import-annotations`, `validate-dataset`, `build-splits` (T3);
 `train` (T4), `evaluate` (T5), `mine-hard-examples` (T6),
 `export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).

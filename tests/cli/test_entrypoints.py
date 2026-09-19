@@ -168,7 +168,9 @@ def test_selftest_passes(capsys) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "sync-routes", "import-annotations",
+        # [nnslr-sync] - START
+        "import-annotations",
+        # [nnslr-sync] - END
         "validate-dataset", "build-splits", "train", "evaluate",
         "mine-hard-examples", "export-onnx", "replay",
         "package-model", "verify-bundle", "export-core",

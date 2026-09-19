@@ -51,6 +51,9 @@ from nnslr_tools.comma_log import (
 from nnslr_tools.media import MediaToolError, extract_frames, make_clip, probe_frame_timestamps, probe_video
 from nnslr_tools.manifest import NnslerManifestError, RouteManifest
 from nnslr_tools.route_io import build_route_manifest
+# [nnslr-sync] - START
+from nnslr_tools.sync import sync_route
+# [nnslr-sync] - END
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +78,10 @@ def collect_env_report() -> dict[str, Any]:
                 "NNSLR_DATA_ROOT is read from the environment, never "
                 "hardcoded (decision D4)."
                 if data_root
-                else "NNSLR_DATA_ROOT is not set; commands that need a data "
-                "root must refuse to run (plan §12.4)."
+                # [nnslr-sync] - START
+                else "NNSLR_DATA_ROOT is not set; sync-routes defaults to "
+                "/srv/nnslr-data. Other data-root commands need --data-root."
+                # [nnslr-sync] - END
             ),
         },
         "cpu": {
@@ -530,12 +535,26 @@ def _cmd_make_clips(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# [nnslr-sync] - START
+def _cmd_sync_routes(args: argparse.Namespace) -> int:
+    try:
+        report = sync_route(
+            route=args.route, host=args.host, segments=args.segments,
+            camera=args.camera, data_root=args.data_root, dry_run=args.dry_run,
+        )
+    except OSError as exc:
+        print(f"error: sync-routes: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report["ok"] else 1
+# [nnslr-sync] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "sync-routes": ("T2", "remote access requires explicit authorization per drive"),
     "import-annotations": ("T3", "annotation validator lands in T3"),
     "validate-dataset": ("T3", "annotation validator lands in T3"),
     "build-splits": ("T3", "leakage-resistant split builder lands in T3"),
@@ -603,6 +622,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_self = sub.add_parser("selftest", help="run the bundled synthetic fixtures (CPU quickstart)")
     p_self.set_defaults(func=lambda a: _selftest())
+
+    # [nnslr-sync] - START
+    p_sync = sub.add_parser("sync-routes", help="copy one comma route via SSH/rsync (front camera + full log)")
+    p_sync.add_argument("--route", required=True, help="route ID to copy (always explicit)")
+    p_sync.add_argument("--host", help="SSH alias, hostname, IPv4 or user@host (default: NNSLR_COMMA_HOST or comma-remote)")
+    p_sync.add_argument("--segments", default="all", help="all (default), 0-3, or 0,2,4-6")
+    p_sync.add_argument("--camera", choices=("narrow", "wide", "both"), default="narrow",
+                        help="narrow=fcamera (default), wide=ecamera, both=both road cameras")
+    p_sync.add_argument("--data-root", help="destination root (default: NNSLR_DATA_ROOT or /srv/nnslr-data)")
+    p_sync.add_argument("--dry-run", action="store_true", help="inventory via SSH and print the plan without copying or writing files")
+    p_sync.set_defaults(func=_cmd_sync_routes)
+    # [nnslr-sync] - END
 
     p_route = sub.add_parser("route-manifest", help="inventory LOCAL route segments and preserve gaps")
     p_route.add_argument("route", help="route directory under the data root, or one local segment directory")
