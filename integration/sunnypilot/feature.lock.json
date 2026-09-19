@@ -9,10 +9,14 @@
   "source_feature_commit": null,
   "patches": [],
   "core": {
-    "state": "unavailable",
-    "source_commit": null,
-    "tree_digest": null,
-    "files": []
+    "state": "snapshot",
+    "source_commit": "1a212ee72aa8ba7fff89559091095c2274e19887",
+    "tree_digest": "0d34f36a2e409bc387c4a9e93c0d9a12e8d040499ab58352247fd234347419d9",
+    "files": [
+      "__init__.py",
+      "py.typed",
+      "types.py"
+    ]
   },
   "schema_bindings": {
     "state": "unassigned",
