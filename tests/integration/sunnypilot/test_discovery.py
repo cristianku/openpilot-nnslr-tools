@@ -10,7 +10,11 @@ import pytest
 
 def _api():
     name = "nnslr_tools.integration.sunnypilot.discover"
-    assert importlib.util.find_spec(name) is not None, f"{name} is not implemented"
+    try:
+        spec = importlib.util.find_spec(name)
+    except ModuleNotFoundError:
+        spec = None
+    assert spec is not None, f"{name} is not implemented"
     module = importlib.import_module(name)
     return module.DiscoveryError, module.discover_hooks, module.load_hook_map
 
