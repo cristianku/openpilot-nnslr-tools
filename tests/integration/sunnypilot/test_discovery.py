@@ -30,7 +30,6 @@ def _fixture_files() -> dict[str, str]:
 
 def test_discovery_matches_pinned_baseline() -> None:
     _, discover_hooks, load_hook_map = _api()
-    _, discover_hooks, load_hook_map = _api()
     hook_map = load_hook_map(HOOK_MAP)
     report = discover_hooks(_fixture_files(), hook_map)
     assert report.compatible is True
@@ -40,6 +39,7 @@ def test_discovery_matches_pinned_baseline() -> None:
 
 
 def test_discovery_reports_missing_required_anchor() -> None:
+    _, discover_hooks, load_hook_map = _api()
     hook_map = load_hook_map(HOOK_MAP)
     files = _fixture_files()
     files["openpilot/cereal/services.py"] = files["openpilot/cereal/services.py"].replace('"liveMapDataSP"', "")
