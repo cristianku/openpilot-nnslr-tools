@@ -91,9 +91,12 @@ export NNSLR_DATA_ROOT=/path/to/speed-vision-data
 ```
 
 <!-- [nnslr-sync] - START -->
-`sync-routes` also works without this variable: its default is `/srv/nnslr-data`.
-An explicit `--data-root` overrides the variable. Other data-root-dependent
-commands still require the variable or their explicit `--data-root` option.
+<!-- [route-extract] - START -->
+`sync-routes` and `extract-frames --route` also work without this variable:
+their default is `/srv/nnslr-data`. An explicit `--data-root` overrides the
+variable. Other data-root-dependent commands still require the variable or
+their explicit `--data-root` option.
+<!-- [route-extract] - END -->
 
 The local processing commands operate on recordings already present on disk.
 Only an explicit `sync-routes` invocation connects to the comma. For qlog/rlog
@@ -245,19 +248,19 @@ available with `--video FILE --output DIRECTORY`.
 These commands operate only on files already copied under local storage. They
 do **not** SSH to, download from, or modify a comma device.
 
+<!-- [route-extract] - START -->
 | Command | Purpose |
 | --- | --- |
 | `nnslr route-manifest` | Inventory local route segments, hashes, missing/partial segments. |
 | `nnslr inspect-manifest` | Summarize a route manifest. |
 | `nnslr video-probe` | Probe fcamera/ecamera/qcamera with ffprobe. |
-<!-- [route-extract] - START -->
 | `nnslr extract-frames` | Use `--route ID` for all local segments automatically, or `--video FILE --output DIR` for one video; defaults to 1 fps, with `--all-frames` available. |
-<!-- [route-extract] - END -->
 | `nnslr log-metadata` | Read local qlog/rlog(.zst) camera/map metadata through a matching local openpilot checkout. |
 | `nnslr align-route` | Join ffprobe presentation order to openpilot `EncodeIndex.segmentId`; preserve unresolved frames explicitly. |
 | `nnslr alignment-report` | Print deterministic alignment diagnostics. |
 | `nnslr find-candidates` | Use map speed transitions as search hints only, never ground truth. |
 | `nnslr make-clips` | Build local review clips around projected candidate times. |
+<!-- [route-extract] - END -->
 
 The production alignment path deliberately distinguishes:
 
