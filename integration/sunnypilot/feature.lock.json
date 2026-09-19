@@ -19,8 +19,11 @@
     ]
   },
   "schema_bindings": {
-    "state": "unassigned",
-    "bindings": []
+    "state": "assigned",
+    "file": "integration/sunnypilot/schema-bindings.json",
+    "bindings": [
+      "speedVisionState@136"
+    ]
   },
   "capability_profile": "bootstrap",
   "hook_map_digest": "61679b4a43bde3841b283cbf30311155ed3bf6b066256fcc9235430859c08c9b"
