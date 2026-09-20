@@ -487,6 +487,7 @@ def train_detector(
         BackboneWeights,
         ssdlite320_mobilenet_v3_large,
     ) = _require_detector_stack()
+    import torchvision
 
     if config.device == "cuda" and not torch.cuda.is_available():
         raise ValueError("cuda_unavailable")
@@ -634,6 +635,12 @@ def train_detector(
                 "epoch": epoch + 1,
                 "validation_loss": best_validation_loss,
                 "initialization": "imagenet1k_v1" if config.pretrained_backbone else "random",
+                "initialization_source": (
+                    "torchvision.models.MobileNet_V3_Large_Weights.IMAGENET1K_V1"
+                    if config.pretrained_backbone else "random"
+                ),
+                "torch_version": torch.__version__,
+                "torchvision_version": torchvision.__version__,
             }, best_path)
 
     gpu = None
@@ -654,7 +661,12 @@ def train_detector(
         "device": str(device),
         "gpu": gpu,
         "torch_version": torch.__version__,
+        "torchvision_version": torchvision.__version__,
         "initialization": "imagenet1k_v1" if config.pretrained_backbone else "random",
+        "initialization_source": (
+            "torchvision.models.MobileNet_V3_Large_Weights.IMAGENET1K_V1"
+            if config.pretrained_backbone else "random"
+        ),
         "config": config.__dict__,
         "history": history,
         "limitations": plan["limitations"],
@@ -680,6 +692,7 @@ def train_reader(
         )
 
     torch, Image, DataLoader, Dataset, transforms, Weights, mobilenet_v3_small = _require_training_stack()
+    import torchvision
 
     if config.device == "cuda" and not torch.cuda.is_available():
         raise ValueError("cuda_unavailable")
@@ -821,6 +834,12 @@ def train_reader(
                 "epoch": epoch + 1,
                 "validation_accuracy": best_accuracy,
                 "initialization": "imagenet1k_v1" if config.pretrained else "random",
+                "initialization_source": (
+                    "torchvision.models.MobileNet_V3_Small_Weights.IMAGENET1K_V1"
+                    if config.pretrained else "random"
+                ),
+                "torch_version": torch.__version__,
+                "torchvision_version": torchvision.__version__,
             }, best_path)
 
     gpu = None
@@ -841,7 +860,12 @@ def train_reader(
         "device": str(device),
         "gpu": gpu,
         "torch_version": torch.__version__,
+        "torchvision_version": torchvision.__version__,
         "initialization": "imagenet1k_v1" if config.pretrained else "random",
+        "initialization_source": (
+            "torchvision.models.MobileNet_V3_Small_Weights.IMAGENET1K_V1"
+            if config.pretrained else "random"
+        ),
         "config": config.__dict__,
         "history": history,
         "limitations": plan["limitations"],
