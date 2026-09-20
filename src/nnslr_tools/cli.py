@@ -787,12 +787,20 @@ def _cmd_mine_hard_examples(args: argparse.Namespace) -> int:
 def _cmd_export_onnx(args: argparse.Namespace) -> int:
     from nnslr_tools.exporting import export_detector_onnx, export_reader_onnx
 
-    exporter = export_detector_onnx if args.task == "detector" else export_reader_onnx
-    report = exporter(
-        Path(args.checkpoint),
-        Path(args.output),
-        verify=not args.no_verify,
-    )
+    if args.task == "detector":
+        report = export_detector_onnx(
+            Path(args.checkpoint),
+            Path(args.output),
+            verify=not args.no_verify,
+            input_width=args.detector_input_width,
+            input_height=args.detector_input_height,
+        )
+    else:
+        report = export_reader_onnx(
+            Path(args.checkpoint),
+            Path(args.output),
+            verify=not args.no_verify,
+        )
     print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
     return 0
 # [onnx-export] - END
@@ -1167,6 +1175,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--task", choices=("reader", "detector"), default="reader")
     p_export.add_argument("--checkpoint", required=True, help="reader-best.pt or detector-best.pt checkpoint")
     p_export.add_argument("--output", required=True, help="target .onnx path")
+    p_export.add_argument("--detector-input-width", type=int, default=1344,
+                          help="detector native input width (default: narrow road 1344)")
+    p_export.add_argument("--detector-input-height", type=int, default=760,
+                          help="detector native input height (default: narrow road 760)")
     p_export.add_argument("--no-verify", action="store_true", help="skip ONNX Runtime numerical parity verification")
     p_export.set_defaults(func=_cmd_export_onnx)
     # [onnx-export] - END
