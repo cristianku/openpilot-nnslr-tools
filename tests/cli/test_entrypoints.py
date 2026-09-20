@@ -168,7 +168,7 @@ def test_selftest_passes(capsys) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "export-core",
+        "check-environment",
     ],
 )
 def test_not_implemented_subcommands_exit_three(capsys, name) -> None:
