@@ -30,7 +30,7 @@ def reader_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
         "architecture": "mobilenet_v3_small",
         "input": {
             "name": "images",
-            "shape": ["batch", 3, input_size, input_size],
+            "shape": [1, 3, input_size, input_size],
             "dtype": "float32",
             "layout": "NCHW",
             "color": "RGB",
@@ -43,7 +43,7 @@ def reader_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
         },
         "output": {
             "name": "logits",
-            "shape": ["batch", len(classes)],
+            "shape": [1, len(classes)],
             "dtype": "float32",
             "classes": classes,
             "decode": "argmax",
@@ -83,6 +83,7 @@ def export_reader_onnx(
             input_names=["images"],
             output_names=["logits"],
             dynamo=True,
+            external_data=False,
         )
         program.save(str(output_path))
     except ImportError as exc:
