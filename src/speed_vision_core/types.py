@@ -768,6 +768,10 @@ def _strict_float(value: Any, field: str) -> float:
             f"{field} must be a number, got {type(value).__name__}: {value!r}",
         )
     return float(value)
+
+
+def _optional_strict_int(value: Any, field: str) -> int | None:
+    return None if value is None else _strict_int(value, field)
 # [nnslr-t1] - END
 
 
@@ -916,13 +920,19 @@ def limit_hypothesis_from_dict(data: Mapping[str, Any]) -> LimitHypothesis:
         )
     return LimitHypothesis(
         has_value=has_value,
-        value_kph=None if not has_value else int(value_kph),
+        value_kph=None if not has_value else _strict_int(value_kph, "hypothesis.value_kph"),
         state=HypothesisState(str(data["state"])),
         track_id=data.get("track_id"),
         event_id=data.get("event_id"),
-        activation_start_mono_ns=data.get("activation_start_mono_ns"),
-        activation_end_mono_ns=data.get("activation_end_mono_ns"),
-        last_context_mono_ns=data.get("last_context_mono_ns"),
+        activation_start_mono_ns=_optional_strict_int(
+            data.get("activation_start_mono_ns"), "hypothesis.activation_start_mono_ns"
+        ),
+        activation_end_mono_ns=_optional_strict_int(
+            data.get("activation_end_mono_ns"), "hypothesis.activation_end_mono_ns"
+        ),
+        last_context_mono_ns=_optional_strict_int(
+            data.get("last_context_mono_ns"), "hypothesis.last_context_mono_ns"
+        ),
         unavailable_reason=data.get("unavailable_reason"),
         usable_for_advisory=bool(data.get("usable_for_advisory", False)),
     )
@@ -945,10 +955,207 @@ def source_snapshot_from_dict(data: Mapping[str, Any]) -> SourceSnapshot:
         source=SourceKind(str(data["source"])),
         provenance=str(data["provenance"]),
         valid=bool(data["valid"]),
-        value_mps=float(data["value_mps"]) if data.get("value_mps") is not None else None,
-        observed_mono_ns=data.get("observed_mono_ns"),
+        value_mps=_strict_float(data["value_mps"], "source.value_mps")
+        if data.get("value_mps") is not None else None,
+        observed_mono_ns=_optional_strict_int(
+            data.get("observed_mono_ns"), "source.observed_mono_ns"
+        ),
         age_unknown=bool(data.get("age_unknown", False)),
         road_context_id=data.get("road_context_id"),
+    )
+
+
+def road_context_to_dict(context: RoadContext) -> dict[str, Any]:
+    return {
+        "session_id": context.session_id,
+        "context_mono_ns": context.context_mono_ns,
+        "calibration_available": context.calibration_available,
+        "ego_motion_available": context.ego_motion_available,
+        "road_continuity_id": context.road_continuity_id,
+        "at_junction": context.at_junction,
+        "country_ambiguous": context.country_ambiguous,
+        "provenance": context.provenance,
+    }
+
+
+def road_context_from_dict(data: Mapping[str, Any]) -> RoadContext:
+    return RoadContext(
+        session_id=str(data["session_id"]),
+        context_mono_ns=_strict_int(data["context_mono_ns"], "road_context.context_mono_ns"),
+        calibration_available=bool(data.get("calibration_available", False)),
+        ego_motion_available=bool(data.get("ego_motion_available", False)),
+        road_continuity_id=data.get("road_continuity_id"),
+        at_junction=bool(data.get("at_junction", False)),
+        country_ambiguous=bool(data.get("country_ambiguous", False)),
+        provenance=str(data.get("provenance", "unknown")),
+    )
+
+
+def applicability_evidence_to_dict(evidence: ApplicabilityEvidence) -> dict[str, Any]:
+    return {
+        "verdict": _enum_value(evidence.verdict),
+        "contributing_frame_ids": list(evidence.contributing_frame_ids),
+        "contributing_context_ids": list(evidence.contributing_context_ids),
+        "method": evidence.method,
+        "method_version": evidence.method_version,
+        "reason": evidence.reason,
+    }
+
+
+def applicability_evidence_from_dict(data: Mapping[str, Any]) -> ApplicabilityEvidence:
+    return ApplicabilityEvidence(
+        verdict=ApplicabilityVerdict(str(data["verdict"])),
+        contributing_frame_ids=tuple(str(v) for v in data.get("contributing_frame_ids", ())),
+        contributing_context_ids=tuple(str(v) for v in data.get("contributing_context_ids", ())),
+        method=str(data.get("method", "")),
+        method_version=str(data.get("method_version", "")),
+        reason=str(data.get("reason", "")),
+    )
+
+
+def passage_evidence_to_dict(evidence: PassageEvidence) -> dict[str, Any]:
+    return {
+        "verdict": _enum_value(evidence.verdict),
+        "earliest_crossing_mono_ns": evidence.earliest_crossing_mono_ns,
+        "latest_crossing_mono_ns": evidence.latest_crossing_mono_ns,
+        "method": evidence.method,
+        "method_version": evidence.method_version,
+        "reason": evidence.reason,
+    }
+
+
+def passage_evidence_from_dict(data: Mapping[str, Any]) -> PassageEvidence:
+    return PassageEvidence(
+        verdict=PassageVerdict(str(data["verdict"])),
+        earliest_crossing_mono_ns=_optional_strict_int(
+            data.get("earliest_crossing_mono_ns"), "passage.earliest_crossing_mono_ns"
+        ),
+        latest_crossing_mono_ns=_optional_strict_int(
+            data.get("latest_crossing_mono_ns"), "passage.latest_crossing_mono_ns"
+        ),
+        method=str(data.get("method", "")),
+        method_version=str(data.get("method_version", "")),
+        reason=str(data.get("reason", "")),
+    )
+
+
+def sign_track_to_dict(track: SignTrack) -> dict[str, Any]:
+    return {
+        "track_id": track.track_id,
+        "sign_family": _enum_value(track.sign_family),
+        "observation_ids": list(track.observation_ids),
+        "consensus_value_state": _enum_value(track.consensus_value_state),
+        "consensus_value_kph": track.consensus_value_kph,
+        "first_seen_mono_ns": track.first_seen_mono_ns,
+        "last_seen_mono_ns": track.last_seen_mono_ns,
+        "capture_timestamps_ns": list(track.capture_timestamps_ns),
+        "applicability": (
+            applicability_evidence_to_dict(track.applicability)
+            if track.applicability is not None else None
+        ),
+        "passage": (
+            passage_evidence_to_dict(track.passage)
+            if track.passage is not None else None
+        ),
+    }
+
+
+def sign_track_from_dict(data: Mapping[str, Any]) -> SignTrack:
+    state = ValueState(str(data["consensus_value_state"]))
+    raw_value = data.get("consensus_value_kph")
+    if state != ValueState.VALUE and raw_value is not None:
+        raise NnslerContractError(
+            ReasonCode.INVALID_VALUE_CONSISTENCY,
+            "track payload carries consensus_value_kph without VALUE state",
+        )
+    applicability = data.get("applicability")
+    passage = data.get("passage")
+    return SignTrack(
+        track_id=str(data["track_id"]),
+        sign_family=SignFamily(str(data["sign_family"])),
+        observation_ids=tuple(str(v) for v in data.get("observation_ids", ())),
+        consensus_value_state=state,
+        consensus_value_kph=(
+            _strict_int(raw_value, "track.consensus_value_kph")
+            if state == ValueState.VALUE else None
+        ),
+        first_seen_mono_ns=_strict_int(data.get("first_seen_mono_ns", 0), "track.first_seen_mono_ns"),
+        last_seen_mono_ns=_strict_int(data.get("last_seen_mono_ns", 0), "track.last_seen_mono_ns"),
+        capture_timestamps_ns=tuple(
+            _strict_int(v, f"track.capture_timestamps_ns[{i}]")
+            for i, v in enumerate(data.get("capture_timestamps_ns", ()))
+        ),
+        applicability=(
+            applicability_evidence_from_dict(applicability)
+            if applicability is not None else None
+        ),
+        passage=passage_evidence_from_dict(passage) if passage is not None else None,
+    )
+
+
+def perception_health_to_dict(health: PerceptionHealth) -> dict[str, Any]:
+    return {
+        "session_id": health.session_id,
+        "backend": health.backend,
+        "backend_available": health.backend_available,
+        "last_processed_capture_mono_ns": health.last_processed_capture_mono_ns,
+        "last_successful_completion_mono_ns": health.last_successful_completion_mono_ns,
+        "overflow": health.overflow,
+        "fault_code": health.fault_code,
+        "dropped_frames": health.dropped_frames,
+    }
+
+
+def perception_health_from_dict(data: Mapping[str, Any]) -> PerceptionHealth:
+    return PerceptionHealth(
+        session_id=str(data["session_id"]),
+        backend=str(data["backend"]),
+        backend_available=bool(data["backend_available"]),
+        last_processed_capture_mono_ns=_optional_strict_int(
+            data.get("last_processed_capture_mono_ns"), "health.last_processed_capture_mono_ns"
+        ),
+        last_successful_completion_mono_ns=_optional_strict_int(
+            data.get("last_successful_completion_mono_ns"), "health.last_successful_completion_mono_ns"
+        ),
+        overflow=bool(data.get("overflow", False)),
+        fault_code=data.get("fault_code"),
+        dropped_frames=_strict_int(data.get("dropped_frames", 0), "health.dropped_frames"),
+    )
+
+
+def advisory_comparison_to_dict(comparison: AdvisoryComparison) -> dict[str, Any]:
+    return {
+        "car": source_snapshot_to_dict(comparison.car) if comparison.car is not None else None,
+        "map": source_snapshot_to_dict(comparison.map) if comparison.map is not None else None,
+        "vision": (
+            limit_hypothesis_to_dict(comparison.vision)
+            if comparison.vision is not None else None
+        ),
+        "car_age_ns": comparison.car_age_ns,
+        "map_age_ns": comparison.map_age_ns,
+        "vision_age_ns": comparison.vision_age_ns,
+        "agreement": _enum_value(comparison.agreement),
+        "display_decision": _enum_value(comparison.display_decision),
+        "reason": comparison.reason,
+    }
+
+
+def advisory_comparison_from_dict(data: Mapping[str, Any]) -> AdvisoryComparison:
+    car = data.get("car")
+    map_source = data.get("map")
+    vision = data.get("vision")
+    return AdvisoryComparison(
+        car=source_snapshot_from_dict(car) if car is not None else None,
+        map=source_snapshot_from_dict(map_source) if map_source is not None else None,
+        vision=limit_hypothesis_from_dict(vision) if vision is not None else None,
+        car_age_ns=_optional_strict_int(data.get("car_age_ns"), "comparison.car_age_ns"),
+        map_age_ns=_optional_strict_int(data.get("map_age_ns"), "comparison.map_age_ns"),
+        vision_age_ns=_optional_strict_int(data.get("vision_age_ns"), "comparison.vision_age_ns"),
+        agreement=Agreement(str(data.get("agreement", Agreement.INSUFFICIENT_DATA.value))),
+        display_decision=DisplayDecision(
+            str(data.get("display_decision", DisplayDecision.HIDE.value))
+        ),
+        reason=str(data.get("reason", "")),
     )
 
 
@@ -1000,5 +1207,17 @@ __all__ = [
     "limit_hypothesis_from_dict",
     "source_snapshot_to_dict",
     "source_snapshot_from_dict",
+    "road_context_to_dict",
+    "road_context_from_dict",
+    "applicability_evidence_to_dict",
+    "applicability_evidence_from_dict",
+    "passage_evidence_to_dict",
+    "passage_evidence_from_dict",
+    "sign_track_to_dict",
+    "sign_track_from_dict",
+    "perception_health_to_dict",
+    "perception_health_from_dict",
+    "advisory_comparison_to_dict",
+    "advisory_comparison_from_dict",
 ]
 # [nnslr-t1] - END
