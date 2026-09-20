@@ -19,7 +19,7 @@ FORBIDDEN_IMPORT_ROOTS = frozenset({
 })
 
 
-class CoreSnapshotError(RuntimeError):
+class CoreSnapshotError(ValueError):
     pass
 
 
