@@ -882,7 +882,6 @@ def _cmd_export_core(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
-    "check-environment": ("T1", "full report is implemented via `nnslr env`"),
 }
 
 
@@ -929,6 +928,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="CUDA device index for --gpu-smoke (default: 0)",
     )
     p_env.set_defaults(func=lambda a: _cmd_env(a))
+
+    p_check = sub.add_parser(
+        "check-environment",
+        help="alias of env; GPU probe only with --gpu-smoke",
+    )
+    p_check.add_argument(
+        "--gpu-smoke",
+        action="store_true",
+        help="explicitly run a CUDA FP16 forward/backward smoke test; allocates GPU memory",
+    )
+    p_check.add_argument(
+        "--gpu-device",
+        type=int,
+        default=0,
+        help="CUDA device index for --gpu-smoke (default: 0)",
+    )
+    p_check.set_defaults(func=lambda a: _cmd_env(a))
 
     p_val = sub.add_parser(
         "validate-batch",
