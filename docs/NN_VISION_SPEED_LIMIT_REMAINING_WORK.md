@@ -223,11 +223,12 @@ nnslr export-onnx --checkpoint reader-best.pt --output reader.onnx
 It freezes the crop/resize/normalization/class contract, emits hashes, checks
 the ONNX model and by default verifies numerical parity with ONNX Runtime.
 
+Offline detector→reader route replay is now implemented in source and preserves frame/timing provenance. It remains unmeasured until real checkpoints exist.
+
 Still missing:
 
 ```text
 detector ONNX/reference export
-nnslr replay
 nnslr package-model
 nnslr verify-bundle
 nnslr export-core
