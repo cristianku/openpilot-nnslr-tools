@@ -723,7 +723,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver.set_defaults(func=lambda a: _cmd_version(a))
 
     p_env = sub.add_parser(
-        "env", help="machine-readable environment report (no implicit GPU probe)"
+        "env", help="machine-readable environment report (GPU probe only with --gpu-smoke)"
+    )
+    p_env.add_argument(
+        "--gpu-smoke",
+        action="store_true",
+        help="explicitly run a CUDA FP16 forward/backward smoke test; allocates GPU memory",
+    )
+    p_env.add_argument(
+        "--gpu-device",
+        type=int,
+        default=0,
+        help="CUDA device index for --gpu-smoke (default: 0)",
     )
     p_env.set_defaults(func=lambda a: _cmd_env(a))
 
@@ -993,8 +1004,19 @@ def _cmd_version(args: argparse.Namespace) -> int:
 
 
 def _cmd_env(args: argparse.Namespace) -> int:
-    print(json.dumps(collect_env_report(), indent=2))
-    return 0
+    report = collect_env_report()
+    if getattr(args, "gpu_smoke", False):
+        from nnslr_tools.training import gpu_smoke
+        try:
+            report["gpu"] = {"available": True, **gpu_smoke(args.gpu_device)}
+        except ValueError as exc:
+            report["gpu"] = {
+                "status": "failed",
+                "available": False,
+                "error": str(exc),
+            }
+    print(json.dumps(report, indent=2))
+    return 1 if report["gpu"]["status"] == "failed" else 0
 
 
 def main(argv: list[str] | None = None) -> int:
