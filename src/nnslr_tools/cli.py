@@ -636,12 +636,54 @@ def _cmd_sync_routes(args: argparse.Namespace) -> int:
 # [nnslr-sync] - END
 
 
+# [training-baseline] - START
+def _cmd_train(args: argparse.Namespace) -> int:
+    from nnslr_tools.preannotate import resolve_data_root
+    from nnslr_tools.training import TrainConfig, prepare_reader_training, train_reader
+
+    root = resolve_data_root(Path(args.data_root) if args.data_root else None)
+    kind = args.dataset_kind
+    default_dataset = (
+        root / "datasets" / "training_candidate_dataset" / "objects.jsonl"
+        if kind == "training-candidate"
+        else root / "annotations" / "objects.jsonl"
+    )
+    dataset = Path(args.dataset) if args.dataset else default_dataset
+    splits = Path(args.splits) if args.splits else root / "splits" / "latest.json"
+
+    plan = prepare_reader_training(dataset, splits, root, dataset_kind=kind)
+    if args.dry_run:
+        summary = dict(plan)
+        summary["record_count"] = len(plan["records"])
+        summary.pop("records", None)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0 if plan["trainable"] else 1
+
+    if not args.output:
+        raise ValueError("--output is required for a real training run")
+    config = TrainConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        input_size=args.input_size,
+        num_workers=args.num_workers,
+        seed=args.seed,
+        device=args.device,
+        pretrained=args.pretrained,
+        amp=not args.no_amp,
+    )
+    result = train_reader(plan, root, Path(args.output), config)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+# [training-baseline] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "train": ("T4", "V100 training requires separate compute authorization"),
     "evaluate": ("T5", "offline evaluation lands in T5"),
     "mine-hard-examples": ("T6", "hard-example mining lands in T6"),
     "export-onnx": ("T7", "ONNX export lands in T7"),
@@ -850,6 +892,30 @@ def build_parser() -> argparse.ArgumentParser:
         _parser.add_argument("--dataset-kind", choices=("gold", "training-candidate"), default="gold",
                              help="gold: human review only; training-candidate: human + model review (default: gold)")
     # [model-review] - END
+    # [training-baseline] - START
+    p_train = sub.add_parser(
+        "train",
+        help="train the first reviewed-crop reader baseline; use --dry-run for a CPU-only plan",
+    )
+    p_train.add_argument("dataset", nargs="?", help="canonical dataset JSONL; defaults from --dataset-kind")
+    p_train.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_train.add_argument("--splits", help="frozen split JSON; default: <data-root>/splits/latest.json")
+    p_train.add_argument("--dataset-kind", choices=("gold", "training-candidate"), default="gold")
+    p_train.add_argument("--dry-run", action="store_true", help="validate and print the exact plan without importing torch or touching a GPU")
+    p_train.add_argument("--output", help="new output directory; required unless --dry-run")
+    p_train.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    p_train.add_argument("--epochs", type=int, default=20)
+    p_train.add_argument("--batch-size", type=int, default=64)
+    p_train.add_argument("--learning-rate", type=float, default=3e-4)
+    p_train.add_argument("--weight-decay", type=float, default=1e-4)
+    p_train.add_argument("--input-size", type=int, default=160)
+    p_train.add_argument("--num-workers", type=int, default=4)
+    p_train.add_argument("--seed", type=int, default=0)
+    p_train.add_argument("--pretrained", action="store_true", help="allow torchvision to obtain ImageNet weights if they are not cached")
+    p_train.add_argument("--no-amp", action="store_true", help="disable CUDA automatic mixed precision")
+    p_train.set_defaults(func=_cmd_train)
+    # [training-baseline] - END
+
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
         p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
