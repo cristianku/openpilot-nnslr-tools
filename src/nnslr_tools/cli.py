@@ -837,13 +837,35 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 # [offline-replay] - END
 
 
+# [model-bundle] - START
+def _cmd_package_model(args: argparse.Namespace) -> int:
+    from nnslr_tools.bundle import package_model
+
+    report = package_model(
+        Path(args.detector_onnx),
+        Path(args.detector_contract),
+        Path(args.reader_onnx),
+        Path(args.reader_contract),
+        Path(args.output),
+    )
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0
+
+
+def _cmd_verify_bundle(args: argparse.Namespace) -> int:
+    from nnslr_tools.bundle import verify_bundle
+
+    report = verify_bundle(Path(args.bundle))
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0
+# [model-bundle] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "package-model": ("T8", "bundle packaging lands in T8"),
-    "verify-bundle": ("T8", "bundle verification lands in T8"),
     "export-core": ("T8", "core snapshot export lands in T8"),
 }
 
@@ -1151,6 +1173,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--dry-run", action="store_true", help="validate frame manifests only; no torch/GPU")
     p_replay.set_defaults(func=_cmd_replay)
     # [offline-replay] - END
+
+    # [model-bundle] - START
+    p_package = sub.add_parser(
+        "package-model",
+        help="package verified detector+reader ONNX artifacts into an immutable bundle",
+    )
+    p_package.add_argument("--detector-onnx", required=True)
+    p_package.add_argument("--detector-contract", required=True)
+    p_package.add_argument("--reader-onnx", required=True)
+    p_package.add_argument("--reader-contract", required=True)
+    p_package.add_argument("--output", required=True, help="new bundle directory")
+    p_package.set_defaults(func=_cmd_package_model)
+
+    p_verify = sub.add_parser(
+        "verify-bundle",
+        help="verify bundle membership, hashes, provenance and advisory capability",
+    )
+    p_verify.add_argument("bundle", help="bundle directory")
+    p_verify.set_defaults(func=_cmd_verify_bundle)
+    # [model-bundle] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
