@@ -193,7 +193,7 @@ For Cristian's runtime fork:
 
 ```bash
 cd /opt
-git clone --recursive https://github.com/cristianku/nn-speed-limit-vision.git openpilot-src
+git clone --recursive --branch nn-speed-limit-vision https://github.com/cristianku/sunnypilot.git openpilot-src
 ```
 
 If you already have the correct openpilot/sunnypilot source locally, use that
@@ -279,95 +279,53 @@ decoded presentation order.
 
 ## 9. Prepare the V100 PyTorch environment
 
-The Tesla V100 is Volta, compute capability `sm_70`.
-
-Do **not** install an arbitrary current PyTorch CUDA wheel. Newer CUDA 13.x
-binary builds do not support Volta. For the V100, use the CUDA 12.6 PyTorch
-build.
-
-Keep training dependencies in a separate venv:
+The Tesla V100 is Volta, compute capability `sm_70`. Use the repository's
+pinned setup script rather than duplicating package-version commands manually:
 
 ```bash
 cd /opt/nnslr
-
-python3 -m venv .venv-gpu
+bash scripts/setup_v100_training_env.sh
 source .venv-gpu/bin/activate
-
-python -m pip install --upgrade pip setuptools wheel
-
-python -m pip install \
-  torch==2.14.0 \
-  torchvision==0.29.0 \
-  --index-url https://download.pytorch.org/whl/cu126
-
-python -m pip install -e .
 ```
 
-Why pin it:
-
-- V100 = Volta / `sm_70`.
-- PyTorch CUDA 12.6 binaries still include Volta support.
-- CUDA 13.x binaries do not.
-- PyTorch 2.14 is the last release line with published CUDA 12.6 wheels for
-  Volta; later releases require staying on this version or building PyTorch
-  from source for `sm_70`.
+The script creates a separate training venv, installs the pinned PyTorch
+CUDA 12.6 profile plus Pillow/ONNX/ONNX Runtime dependencies, installs NNSLR
+editable, and prints the detected CUDA build information. It does **not**
+replace NVIDIA drivers and does **not** execute a GPU workload.
 
 Do not install a separate CUDA toolkit merely because `nvidia-smi` works.
-The PyTorch wheel ships its CUDA runtime dependencies; the host/container
-NVIDIA driver must only be compatible with the selected runtime.
+The selected PyTorch wheel carries its CUDA runtime dependencies; the
+host/container NVIDIA driver must be compatible with that runtime.
 
 ---
 
-## 10. Verify both V100s from PyTorch
+## 10. Explicit V100 smoke test
 
-With `.venv-gpu` active:
+After installation, run the GPU workload explicitly:
 
 ```bash
-python - <<'PY'
-import torch
-
-print("torch:", torch.__version__)
-print("torch CUDA runtime:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-print("GPU count:", torch.cuda.device_count())
-print("compiled arch list:", torch.cuda.get_arch_list())
-
-for i in range(torch.cuda.device_count()):
-    p = torch.cuda.get_device_properties(i)
-    print(
-        i,
-        p.name,
-        f"{p.total_memory / 1024**3:.1f} GiB",
-        "capability",
-        torch.cuda.get_device_capability(i),
-    )
-
-x = torch.randn(4096, 4096, device="cuda:0", dtype=torch.float16)
-y = x @ x
-print("GPU0 FP16 smoke:", float(y[0, 0]))
-
-if torch.cuda.device_count() > 1:
-    x1 = torch.randn(2048, 2048, device="cuda:1", dtype=torch.float16)
-    y1 = x1 @ x1
-    print("GPU1 FP16 smoke:", float(y1[0, 0]))
-PY
+source /opt/nnslr/.venv-gpu/bin/activate
+nnslr env --gpu-smoke --gpu-device 0
 ```
 
-For V100 you want to see:
+For a V100, verify that the report shows capability `[7, 0]`, includes
+`sm_70` in the compiled architecture list, and reports
+`fp16_forward_backward: true`.
 
-```text
-CUDA available: True
-GPU count: 2
-capability (7, 0)
+For an additional GPU, select its CUDA index explicitly:
+
+```bash
+nnslr env --gpu-smoke --gpu-device 1
 ```
 
-and `sm_70` should be present in the compiled architecture list.
-
-Also check:
+Also check ownership/occupancy before training:
 
 ```bash
 nvidia-smi
 ```
+
+Do not start a real NNSLR training run on a GPU that is still reserved by
+another service.
 
 ---
 
