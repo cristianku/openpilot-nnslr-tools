@@ -773,12 +773,21 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 # [evaluation-baseline] - END
 
 
+# [hard-example-mining] - START
+def _cmd_mine_hard_examples(args: argparse.Namespace) -> int:
+    from nnslr_tools.hard_examples import mine_file
+
+    report = mine_file(Path(args.evaluation), Path(args.output))
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+# [hard-example-mining] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "mine-hard-examples": ("T6", "hard-example mining lands in T6"),
     "export-onnx": ("T7", "ONNX export lands in T7"),
     "replay": ("T7", "annotated replay lands in T7"),
     "package-model": ("T8", "bundle packaging lands in T8"),
@@ -1050,6 +1059,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval.add_argument("--output", help="optional JSON report path")
     p_eval.set_defaults(func=_cmd_evaluate)
     # [evaluation-baseline] - END
+
+    # [hard-example-mining] - START
+    p_mine = sub.add_parser(
+        "mine-hard-examples",
+        help="extract reader/detector errors from an evaluation JSON report",
+    )
+    p_mine.add_argument("evaluation", help="JSON report produced by nnslr evaluate --output")
+    p_mine.add_argument("--output", required=True, help="output JSONL manifest of hard examples")
+    p_mine.set_defaults(func=_cmd_mine_hard_examples)
+    # [hard-example-mining] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
