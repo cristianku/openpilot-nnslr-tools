@@ -169,59 +169,64 @@ Dataset splits must be leakage-safe at route/sequence level rather than randomly
 
 ---
 
-## 4. Model training still missing
+## 4. Model training/evaluation source baseline implemented; real run pending
 
-Not implemented:
+Implemented on `main` as of 2026-09-20:
 
 ```text
-nnslr train
-nnslr evaluate
+nnslr train --task detector
+nnslr train --task reader
+nnslr evaluate --task detector
+nnslr evaluate --task reader
 nnslr mine-hard-examples
+nnslr env --gpu-smoke
 ```
 
-Recommended model contract:
+The detector baseline is single-class vertical speed-sign detection using
+SSDLite320 + MobileNetV3. The reader baseline is MobileNetV3-Small over reviewed
+sign crops. Both consume the hash-bound canonical dataset and frozen split;
+`--dry-run` validates the exact population without importing PyTorch or
+touching a GPU. Model-reviewed candidate data remains explicitly distinct from
+human gold data.
 
-```text
-Detector
-   ↓
-sign crop
-   ↓
-Reader / classifier
-   ↓
-Detection {
-  bbox,
-  sign_family,
-  value_state,
-  value_kph,
-  detection_score,
-  classification_score,
-  supported_domain
-}
-```
+The V100 environment is pinned to PyTorch 2.14 / CUDA 12.6, and the explicit
+GPU smoke check verifies compiled architecture support plus an FP16
+forward/backward operation. No real NNSLR detector/reader training run has yet
+been executed on the V100, so there are no accuracy claims or final model hashes.
 
-The model must recognize evidence; it must not directly output an operational vehicle speed target.
+Current evaluation source supports reader accuracy/per-class confusion and
+detector IoU precision/recall/F1 plus false positives per image. Sample-level
+errors feed `mine-hard-examples`. Still required before model acceptance:
 
-Evaluation must include:
+- real gold-corpus training and held-out evaluation;
+- detector COCO-style mAP;
+- false positives per hour from timed replay;
+- numeric/sign-family accuracy over representative Swiss coverage;
+- other-road false-positive rate;
+- time-to-first-detection and stable-value latency;
+- difficult confusion analysis such as 30/80, 60/80, 80/100, 100/120;
+- retraining after mined hard examples.
 
-- detector precision/recall/mAP;
-- false positives per hour;
-- numeric value accuracy;
-- sign-family accuracy;
-- other-road false positive rate;
-- time-to-first-detection;
-- stable-value latency;
-- difficult confusions such as 30/80, 60/80, 80/100, 100/120.
-
-Hard-example mining must feed errors back into the dataset instead of adding special-case runtime hacks.
+The model must recognize evidence; it must not directly output an operational
+vehicle speed target.
 
 ---
 
-## 5. Export and model bundle still missing
+## 5. Export and model bundle
 
-Not implemented:
+Reader reference ONNX export is now implemented:
 
 ```text
-nnslr export-onnx
+nnslr export-onnx --checkpoint reader-best.pt --output reader.onnx
+```
+
+It freezes the crop/resize/normalization/class contract, emits hashes, checks
+the ONNX model and by default verifies numerical parity with ONNX Runtime.
+
+Still missing:
+
+```text
+detector ONNX/reference export
 nnslr replay
 nnslr package-model
 nnslr verify-bundle
