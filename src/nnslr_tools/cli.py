@@ -861,12 +861,28 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
 # [model-bundle] - END
 
 
+# [core-export] - START
+def _cmd_export_core(args: argparse.Namespace) -> int:
+    from nnslr_tools.core_snapshot import export_core_snapshot, verify_core_snapshot
+
+    repo_root = Path(__file__).resolve().parents[2]
+    manifest, manifest_path = export_core_snapshot(repo_root, Path(args.output))
+    verify_core_snapshot(Path(args.output), manifest_path)
+    print(json.dumps({
+        "valid": True,
+        "output": str(Path(args.output)),
+        "manifest": str(manifest_path),
+        **manifest.to_dict(),
+    }, indent=2, sort_keys=True))
+    return 0
+# [core-export] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "export-core": ("T8", "core snapshot export lands in T8"),
 }
 
 
@@ -1193,6 +1209,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("bundle", help="bundle directory")
     p_verify.set_defaults(func=_cmd_verify_bundle)
     # [model-bundle] - END
+
+    # [core-export] - START
+    p_core = sub.add_parser(
+        "export-core",
+        help="export and verify the portable stdlib-only speed_vision_core snapshot",
+    )
+    p_core.add_argument("--output", required=True, help="new destination directory for speed_vision_core")
+    p_core.set_defaults(func=_cmd_export_core)
+    # [core-export] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
