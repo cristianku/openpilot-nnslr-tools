@@ -785,9 +785,10 @@ def _cmd_mine_hard_examples(args: argparse.Namespace) -> int:
 
 # [onnx-export] - START
 def _cmd_export_onnx(args: argparse.Namespace) -> int:
-    from nnslr_tools.exporting import export_reader_onnx
+    from nnslr_tools.exporting import export_detector_onnx, export_reader_onnx
 
-    report = export_reader_onnx(
+    exporter = export_detector_onnx if args.task == "detector" else export_reader_onnx
+    report = exporter(
         Path(args.checkpoint),
         Path(args.output),
         verify=not args.no_verify,
@@ -1124,9 +1125,10 @@ def build_parser() -> argparse.ArgumentParser:
     # [onnx-export] - START
     p_export = sub.add_parser(
         "export-onnx",
-        help="export the trained reader checkpoint to a verified ONNX reference artifact",
+        help="export a trained reader/detector checkpoint to a verified ONNX reference artifact",
     )
-    p_export.add_argument("--checkpoint", required=True, help="reader-best.pt checkpoint")
+    p_export.add_argument("--task", choices=("reader", "detector"), default="reader")
+    p_export.add_argument("--checkpoint", required=True, help="reader-best.pt or detector-best.pt checkpoint")
     p_export.add_argument("--output", required=True, help="target .onnx path")
     p_export.add_argument("--no-verify", action="store_true", help="skip ONNX Runtime numerical parity verification")
     p_export.set_defaults(func=_cmd_export_onnx)
