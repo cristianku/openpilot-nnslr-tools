@@ -557,6 +557,20 @@ nnslr train --task reader \
 Each run writes an immutable training plan, best checkpoint and JSON result,
 including dataset/split hashes and GPU identity.
 
+For the complete guarded pipeline on the training host:
+
+```sh
+export NNSLR_DATA_ROOT=/srv/nnslr-data
+export NNSLR_GPU_INDEX=0
+bash scripts/run_v100_baseline.sh baseline-001
+```
+
+The script refuses an already-busy GPU by default, then runs CPU-only
+population checks, CUDA smoke, detector+reader training, held-out evaluation,
+hard-example mining, ONNX parity export, immutable bundle packaging and final
+bundle verification. It never kills competing GPU processes and never deploys
+anything to Sunnypilot or a comma device.
+
 ## Offline evaluation and hard-example mining (T5/T6)
 
 Inspect the frozen evaluation population without importing PyTorch:
@@ -673,8 +687,14 @@ same as model evidence**. Still required:
 - successful detector and reader ONNX parity runs on real checkpoints;
 - timed replay metrics (false positives/hour and latency);
 - model bundle benchmark on the target Comma runtime backend;
-- temporal consensus, road ownership and passage logic;
+- physical-track association, road-ownership geometry and passage-evidence algorithms;
+- evaluation/freeze of the implemented temporal 3-of-5 / 0.8 s profile;
 - target-device shadow/observation/advisory validation.
+
+The portable core already includes bounded temporal consensus, fail-closed
+perception-health gating and the separate CAR/MAP/VISION advisory comparator.
+These are source-level reference semantics; they are not yet evidence that road
+ownership or passage works on real driving scenes.
 
 See `docs/plan.md` for the full task breakdown and `docs/vision-speed-limit/`
 for decisions (D1–D8) and the T0 audit.
