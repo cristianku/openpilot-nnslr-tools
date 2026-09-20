@@ -168,7 +168,7 @@ def test_selftest_passes(capsys) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "package-model", "verify-bundle", "export-core",
+        "export-core",
     ],
 )
 def test_not_implemented_subcommands_exit_three(capsys, name) -> None:
