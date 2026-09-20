@@ -797,12 +797,50 @@ def _cmd_export_onnx(args: argparse.Namespace) -> int:
 # [onnx-export] - END
 
 
+# [offline-replay] - START
+def _cmd_replay(args: argparse.Namespace) -> int:
+    from nnslr_tools.preannotate import resolve_data_root
+    from nnslr_tools.replay import load_route_frames, replay_route
+
+    root = resolve_data_root(Path(args.data_root) if args.data_root else None)
+    frames, manifests = load_route_frames(root, args.route)
+    if args.dry_run:
+        print(json.dumps({
+            "valid": True,
+            "route_id": args.route,
+            "frame_count": len(frames),
+            "manifests": manifests,
+            "gpu_required": False,
+            "checkpoints_required_for_execution": True,
+        }, indent=2, sort_keys=True))
+        return 0 if frames else 1
+
+    if not args.detector_checkpoint or not args.reader_checkpoint:
+        raise ValueError("--detector-checkpoint and --reader-checkpoint are required unless --dry-run")
+    if not args.output:
+        raise ValueError("--output is required unless --dry-run")
+
+    report = replay_route(
+        root,
+        args.route,
+        Path(args.detector_checkpoint),
+        Path(args.reader_checkpoint),
+        Path(args.output),
+        device_name=args.device,
+        detector_threshold=args.detector_threshold,
+        reader_threshold=args.reader_threshold,
+        max_detections=args.max_detections,
+    )
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0
+# [offline-replay] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "replay": ("T7", "annotated replay lands in T7"),
     "package-model": ("T8", "bundle packaging lands in T8"),
     "verify-bundle": ("T8", "bundle verification lands in T8"),
     "export-core": ("T8", "core snapshot export lands in T8"),
@@ -1093,6 +1131,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--no-verify", action="store_true", help="skip ONNX Runtime numerical parity verification")
     p_export.set_defaults(func=_cmd_export_onnx)
     # [onnx-export] - END
+
+    # [offline-replay] - START
+    p_replay = sub.add_parser(
+        "replay",
+        help="run offline detector -> reader perception over extracted route frames",
+    )
+    p_replay.add_argument("--route", required=True, help="local extracted route ID")
+    p_replay.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_replay.add_argument("--detector-checkpoint", help="detector-best.pt")
+    p_replay.add_argument("--reader-checkpoint", help="reader-best.pt")
+    p_replay.add_argument("--output", help="output JSONL; required unless --dry-run")
+    p_replay.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    p_replay.add_argument("--detector-threshold", type=float, default=.25)
+    p_replay.add_argument("--reader-threshold", type=float, default=0.0)
+    p_replay.add_argument("--max-detections", type=int, default=20)
+    p_replay.add_argument("--dry-run", action="store_true", help="validate frame manifests only; no torch/GPU")
+    p_replay.set_defaults(func=_cmd_replay)
+    # [offline-replay] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
