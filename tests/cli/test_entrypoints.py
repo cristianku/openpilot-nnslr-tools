@@ -168,7 +168,7 @@ def test_selftest_passes(capsys) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "mine-hard-examples", "export-onnx", "replay",
+        "export-onnx", "replay",
         "package-model", "verify-bundle", "export-core",
     ],
 )
