@@ -148,6 +148,8 @@ def package_model(
         "reader_checkpoint_sha256": reader.get("checkpoint_sha256"),
         "detector_onnx_sha256": detector["onnx_sha256"],
         "reader_onnx_sha256": reader["onnx_sha256"],
+        "detector_initialization": detector.get("training_initialization", "unknown"),
+        "reader_initialization": reader.get("training_initialization", "unknown"),
         "evaluation_status": "bundle packaging does not establish accuracy or target-runtime suitability",
     }
 
