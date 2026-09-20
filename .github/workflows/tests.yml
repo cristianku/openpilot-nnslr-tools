@@ -17,4 +17,5 @@ jobs:
       - run: nnslr --help
       - run: nnslr selftest
       - run: bash -n scripts/setup_v100_training_env.sh
+      - run: bash -n scripts/run_v100_baseline.sh
       - run: pytest -q
