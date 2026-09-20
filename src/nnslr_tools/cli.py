@@ -878,23 +878,6 @@ def _cmd_export_core(args: argparse.Namespace) -> int:
 # [core-export] - END
 
 
-# Not-yet-implemented subcommands (documented, not stubbed)
-# ---------------------------------------------------------------------------
-
-_NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
-}
-
-
-def _not_implemented(name: str, _args: argparse.Namespace) -> int:
-    task, note = _NOT_IMPLEMENTED[name]
-    print(
-        f"error: `nnslr {name}` is not implemented yet (planned in {task}). {note}.",
-        file=sys.stderr,
-    )
-    print("See docs/plan.md §12.4 for the full script contract.", file=sys.stderr)
-    return 3
-
-
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -1234,10 +1217,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_core.add_argument("--output", required=True, help="new destination directory for speed_vision_core")
     p_core.set_defaults(func=_cmd_export_core)
     # [core-export] - END
-
-    for name in _NOT_IMPLEMENTED:
-        p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
-        p.set_defaults(func=lambda a, _n=name: _not_implemented(_n, a))
 
     return parser
 
