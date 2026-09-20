@@ -214,6 +214,148 @@ def prepare_reader_training(
     }
 
 
+DETECTOR_FAMILIES = frozenset({
+    "maximum_speed",
+    "cancellation",
+    "zone",
+    "variable_display",
+    "unreadable",
+})
+
+
+def prepare_detector_training(
+    dataset_path: Path,
+    split_path: Path,
+    data_root: Path,
+    *,
+    dataset_kind: str = "gold",
+) -> dict[str, Any]:
+    """Build a full-frame detector plan from reviewed annotations.
+
+    Only vertical speed-sign families are positive detector boxes. A frame is a
+    detector negative only when it has an explicit whole-frame not_a_sign
+    review. other_sign/road_marking rows alone are not silently promoted to
+    whole-frame negatives.
+    """
+    dataset_path = Path(dataset_path)
+    split_path = Path(split_path)
+    data_root = Path(data_root)
+
+    rows = load_jsonl(dataset_path)
+    validation = validate_dataset(rows, data_root, dataset_kind=dataset_kind)
+    if not validation.get("valid"):
+        reasons = sorted({str(e.get("reason", "dataset_invalid")) for e in validation.get("errors", [])})
+        raise ValueError("dataset_invalid: " + ",".join(reasons))
+
+    resolved_split_path, split_doc = _load_split_document(split_path, data_root)
+    split_errors = validate_splits(
+        rows,
+        split_doc,
+        validation["dataset_sha256"],
+        dataset_kind=dataset_kind,
+    )
+    if split_errors:
+        reasons = sorted({str(e.get("reason", "split_invalid")) for e in split_errors})
+        raise ValueError("split_invalid: " + ",".join(reasons))
+    assignments = split_doc["assignments"]
+
+    grouped: dict[str, dict[str, Any]] = {}
+    ignored = Counter()
+    for row in rows:
+        if row.get("review_state") not in ELIGIBLE_REVIEW_STATES:
+            ignored["rejected_or_pending"] += 1
+            continue
+        annotation_id = row["annotation_id"]
+        split_name = assignments.get(annotation_id)
+        if not isinstance(split_name, str):
+            ignored["missing_split"] += 1
+            continue
+        key = row["image_sha256"]
+        frame = grouped.setdefault(key, {
+            "image_path": row["image_path"],
+            "image_sha256": row["image_sha256"],
+            "width": row["width"],
+            "height": row["height"],
+            "split": split_name,
+            "route_id": row["route_id"],
+            "segment_index": row["segment_index"],
+            "decoded_frame_index": row["decoded_frame_index"],
+            "boxes": [],
+            "annotation_ids": [],
+            "explicit_negative": False,
+        })
+        if (
+            frame["image_path"] != row["image_path"]
+            or frame["split"] != split_name
+            or frame["width"] != row["width"]
+            or frame["height"] != row["height"]
+        ):
+            raise ValueError("inconsistent_frame_group")
+
+        family = row["sign_family"]
+        if row["bbox_xyxy"] is None and family == "not_a_sign":
+            frame["explicit_negative"] = True
+            frame["annotation_ids"].append(annotation_id)
+        elif row["bbox_xyxy"] is not None and family in DETECTOR_FAMILIES:
+            frame["boxes"].append(list(row["bbox_xyxy"]))
+            frame["annotation_ids"].append(annotation_id)
+        else:
+            ignored["non_detector_label"] += 1
+
+    frames = []
+    for frame in grouped.values():
+        if not frame["boxes"] and not frame["explicit_negative"]:
+            continue
+        image = _safe_image_path(data_root, frame["image_path"])
+        if not image.is_file():
+            raise ValueError(f"missing_image: {frame['image_path']}")
+        frames.append(frame)
+    frames.sort(key=lambda r: (r["route_id"], r["segment_index"], r["image_path"]))
+
+    counts_by_split = Counter(r["split"] for r in frames)
+    boxes_by_split = Counter()
+    negatives_by_split = Counter()
+    for frame in frames:
+        boxes_by_split[frame["split"]] += len(frame["boxes"])
+        if frame["explicit_negative"] and not frame["boxes"]:
+            negatives_by_split[frame["split"]] += 1
+
+    trainable = (
+        counts_by_split[TRAIN_SPLIT] > 0
+        and counts_by_split[VALIDATION_SPLIT] > 0
+        and boxes_by_split[TRAIN_SPLIT] > 0
+        and boxes_by_split[VALIDATION_SPLIT] > 0
+    )
+
+    limitations = [
+        "single_class_vertical_speed_sign_detector",
+        "road_markings_excluded",
+        "other_sign_not_assumed_whole_frame_negative",
+        "no_runtime_bundle",
+    ]
+    if dataset_kind == "training-candidate":
+        limitations.append("model_review_candidates_are_not_human_gold")
+
+    return {
+        "schema_version": TRAINING_SCHEMA_VERSION,
+        "task": "detector",
+        "dataset_kind": dataset_kind,
+        "dataset_path": str(dataset_path),
+        "dataset_sha256": validation["dataset_sha256"],
+        "split_path": str(resolved_split_path),
+        "requested_split_path": str(split_path),
+        "split_sha256": _sha256(resolved_split_path),
+        "classes": ["speed_sign"],
+        "frames": frames,
+        "counts_by_split": dict(sorted(counts_by_split.items())),
+        "boxes_by_split": dict(sorted(boxes_by_split.items())),
+        "negative_frames_by_split": dict(sorted(negatives_by_split.items())),
+        "ignored": dict(sorted(ignored.items())),
+        "trainable": trainable,
+        "limitations": limitations,
+    }
+
+
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 20
