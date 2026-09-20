@@ -617,15 +617,64 @@ provenance from the extraction manifests. It emits detector boxes and reader
 labels only. It deliberately does **not** perform temporal consensus, road
 ownership, passage/current-limit inference, or any vehicle-control action.
 
-## What is not implemented yet (documented, not stubbed)
+## Reference export and immutable bundle
 
-`nnslr` lists these subcommands and refuses them with exit code `3` so a clean
-clone documents what does not exist rather than pretending:
+Both baseline checkpoints now have reference ONNX exporters:
 
-<!-- [nnslr-sync] - START -->
-`check-environment` (full);
-<!-- [nnslr-sync] - END -->
-`package-model`, `verify-bundle`, `export-core` (T8). Detector ONNX export also remains pending.
+```sh
+nnslr export-onnx --task detector \
+  --checkpoint "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector-best.pt" \
+  --output "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector.onnx"
+
+nnslr export-onnx --task reader \
+  --checkpoint "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader-best.pt" \
+  --output "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader.onnx"
+```
+
+Each export writes a hash-bound I/O contract and, by default, compares the
+PyTorch result with ONNX Runtime. The detector export includes its torchvision
+post-processing/NMS path and therefore still requires an actual trained-model
+export run before it can be called target-compatible.
+
+Only parity-verified exports can be packaged:
+
+```sh
+nnslr package-model \
+  --detector-onnx "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector.onnx" \
+  --detector-contract "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector.onnx.contract.json" \
+  --reader-onnx "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader.onnx" \
+  --reader-contract "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader.onnx.contract.json" \
+  --output "$NNSLR_DATA_ROOT/runs/model-bundle-001"
+
+nnslr verify-bundle "$NNSLR_DATA_ROOT/runs/model-bundle-001"
+```
+
+The bundle freezes model files, I/O contracts, class mapping, capability
+limits, dataset/split provenance and per-file SHA-256 hashes. A one-byte change
+fails verification.
+
+The portable runtime contract can also be exported independently:
+
+```sh
+nnslr export-core --output /tmp/speed_vision_core
+```
+
+This produces the same stdlib-only file set and tree-digest scheme consumed by
+the Sunnypilot vendored core snapshot.
+
+## What is still pending
+
+The CLI surface for T4–T8 is now implemented, but **implementation is not the
+same as model evidence**. Still required:
+
+- a sufficiently large human-reviewed Swiss gold corpus;
+- real detector and reader training on the V100;
+- held-out evaluation and hard-example retraining;
+- successful detector and reader ONNX parity runs on real checkpoints;
+- timed replay metrics (false positives/hour and latency);
+- model bundle benchmark on the target Comma runtime backend;
+- temporal consensus, road ownership and passage logic;
+- target-device shadow/observation/advisory validation.
 
 See `docs/plan.md` for the full task breakdown and `docs/vision-speed-limit/`
 for decisions (D1–D8) and the T0 audit.
