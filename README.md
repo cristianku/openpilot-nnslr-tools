@@ -12,10 +12,13 @@ This is the **TRAIN_REPO**. It owns:
 - the pure, hardware-independent domain contract (`speed_vision_core`);
 - dataset preparation, alignment, annotation, splitting (T2/T3, synthetic-only
   for now);
-- training / evaluation / export tooling (T4–T8, not implemented yet).
+- training / evaluation / export tooling (T4–T8). The first reviewed-crop
+  reader baseline is implemented; detector training, evaluation and export are
+  still pending.
 
-It deliberately depends on **nothing** beyond the Python standard library at
-this stage — no `torch`, no CUDA, no `tinygrad`, no `openpilot`, no `cereal`.
+The core/data CLI remains dependency-light and never imports PyTorch implicitly.
+Training dependencies are isolated and loaded only by an explicit training or
+GPU-smoke command; `nnslr train --dry-run` remains CPU-only.
 
 ---
 
@@ -494,6 +497,51 @@ default. Generate alignments with the current `align-route` command: older
 files without source hashes are rejected rather than trusted implicitly.
 <!-- [reviewed-dataset] - END -->
 
+## Reader baseline training (T4 started)
+
+The first real training surface is now available. It trains a
+`MobileNetV3-Small` **reader** from reviewed sign bounding-box crops. It does
+not train the detector yet and does not produce an on-device model bundle.
+
+Validate the exact dataset and frozen split without importing PyTorch or touching
+a GPU:
+
+```sh
+nnslr train --dry-run
+```
+
+By default this uses the gold human-reviewed dataset and follows the
+hash-verified `splits/latest.json` pointer. Model-reviewed data is isolated:
+
+```sh
+nnslr train --dry-run --dataset-kind training-candidate
+```
+
+Before the first V100 run, explicitly verify the CUDA environment:
+
+```sh
+nnslr env --gpu-smoke --gpu-device 0
+```
+
+Unlike plain `nnslr env`, `--gpu-smoke` intentionally imports PyTorch,
+allocates GPU memory, checks that the installed binary contains the GPU's CUDA
+architecture, and executes a real FP16 forward/backward operation. For a Tesla
+V100 the capability must be `(7, 0)` / `sm_70`.
+
+A real training run requires a new output directory:
+
+```sh
+nnslr train \
+  --output "$NNSLR_DATA_ROOT/runs/reader-baseline-001" \
+  --device cuda \
+  --epochs 20
+```
+
+The run writes an immutable training plan, best checkpoint and JSON result,
+including dataset/split hashes and GPU identity. This baseline is research
+evidence only: no checkpoint is automatically copied to Sunnypilot or the
+Comma.
+
 ## What is not implemented yet (documented, not stubbed)
 
 `nnslr` lists these subcommands and refuses them with exit code `3` so a clean
@@ -502,7 +550,7 @@ clone documents what does not exist rather than pretending:
 <!-- [nnslr-sync] - START -->
 `check-environment` (full);
 <!-- [nnslr-sync] - END -->
-`train` (T4), `evaluate` (T5), `mine-hard-examples` (T6),
+`evaluate` (T5), `mine-hard-examples` (T6),
 `export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).
 
 See `docs/plan.md` for the full task breakdown and `docs/vision-speed-limit/`
