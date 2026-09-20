@@ -294,3 +294,85 @@ def replay_route(
             "no_vehicle_control",
         ],
     }
+
+
+
+def replay_bundle_route(
+    data_root: Path,
+    route_id: str,
+    bundle_dir: Path,
+    output_path: Path,
+    *,
+    detector_threshold: float | None = None,
+    reader_threshold: float | None = None,
+    max_detections: int = 20,
+) -> dict[str, Any]:
+    """Replay a verified packaged ONNX bundle through the CPU reference runtime."""
+    from nnslr_tools.bundle_runtime import ReferenceBundleRunner
+
+    frames, manifests = load_route_frames(Path(data_root), route_id)
+    runner = ReferenceBundleRunner(Path(bundle_dir))
+
+    rows = []
+    detection_count = 0
+    supported_count = 0
+    for frame in frames:
+        path = _safe_frame_path(Path(data_root), frame["image_path"])
+        detections = runner.run_image(
+            path,
+            detector_threshold=detector_threshold,
+            reader_threshold=reader_threshold,
+            max_detections=max_detections,
+        )
+        detection_count += len(detections)
+        supported_count += sum(int(d["supported_domain"]) for d in detections)
+        rows.append({
+            "schema_version": 1,
+            "kind": "offline_bundle_perception_replay",
+            "route_id": route_id,
+            "segment_index": frame.get("segment_index"),
+            "output_index": frame.get("output_index"),
+            "decoded_frame_index": frame.get("decoded_frame_index"),
+            "camera_stream": frame.get("camera_stream"),
+            "image_path": frame["image_path"],
+            "image_sha256": frame.get("image_sha256"),
+            "media_time_s": frame.get("media_time_s"),
+            "media_time_provenance": frame.get("media_time_provenance"),
+            "capture_mono_ns": frame.get("capture_mono_ns"),
+            "capture_time_provenance": frame.get("capture_time_provenance"),
+            "alignment_status": frame.get("alignment_status"),
+            "detections": detections,
+        })
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+            for row in rows
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "valid": True,
+        "route_id": route_id,
+        "frame_count": len(rows),
+        "detection_count": detection_count,
+        "supported_detection_count": supported_count,
+        "output": str(output_path),
+        "output_sha256": _sha256(output_path),
+        "manifests": manifests,
+        "bundle": str(Path(bundle_dir)),
+        "bundle_digest": runner.bundle_report["bundle_digest"],
+        "dataset_sha256": runner.bundle_report["dataset_sha256"],
+        "split_sha256": runner.bundle_report["split_sha256"],
+        "runtime": "onnxruntime_cpu_reference",
+        "target_compatible": False,
+        "limitations": [
+            "perception_only_no_temporal_consensus",
+            "no_road_ownership",
+            "no_passage_or_current_limit",
+            "no_vehicle_control",
+            "reference_runtime_not_target_backend",
+        ],
+    }
