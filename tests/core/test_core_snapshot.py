@@ -34,7 +34,7 @@ def test_export_and_verify_core_snapshot(tmp_path) -> None:
 
     assert verified.tree_digest == manifest.tree_digest
     assert verified.source_repository == "cristianku/openpilot-nnslr-tools"
-    assert set(verified.files) == {"__init__.py", "py.typed", "types.py"}
+    assert set(verified.files) == {"__init__.py", "py.typed", "temporal.py", "types.py"}
     payload = json.loads(manifest_path.read_text())
     assert payload["source_commit"] == manifest.source_commit
 
