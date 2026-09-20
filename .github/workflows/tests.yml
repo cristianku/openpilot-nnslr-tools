@@ -16,4 +16,5 @@ jobs:
       - run: python -m pip install -e . pytest
       - run: nnslr --help
       - run: nnslr selftest
+      - run: bash -n scripts/setup_v100_training_env.sh
       - run: pytest -q
