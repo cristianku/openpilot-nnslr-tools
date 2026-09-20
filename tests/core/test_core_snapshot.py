@@ -10,7 +10,16 @@ from nnslr_tools.core_snapshot import (
     export_core_snapshot,
     verify_core_snapshot,
 )
-from test_annotations import invoke
+from nnslr_tools import cli
+
+
+def invoke(capsys, *args):
+    try:
+        code = cli.main(list(args))
+    except SystemExit as exc:
+        code = exc.code
+    output = capsys.readouterr()
+    return code, output
 
 
 def _repo_root() -> Path:
