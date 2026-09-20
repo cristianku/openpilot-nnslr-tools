@@ -548,7 +548,7 @@ def train_detector(
         collate_fn=collate,
     )
 
-    backbone_weights = BackboneWeights.DEFAULT if config.pretrained_backbone else None
+    backbone_weights = BackboneWeights.IMAGENET1K_V1 if config.pretrained_backbone else None
     model = ssdlite320_mobilenet_v3_large(
         weights=None,
         weights_backbone=backbone_weights,
@@ -633,6 +633,7 @@ def train_detector(
                 "split_sha256": plan["split_sha256"],
                 "epoch": epoch + 1,
                 "validation_loss": best_validation_loss,
+                "initialization": "imagenet1k_v1" if config.pretrained_backbone else "random",
             }, best_path)
 
     gpu = None
@@ -653,6 +654,7 @@ def train_detector(
         "device": str(device),
         "gpu": gpu,
         "torch_version": torch.__version__,
+        "initialization": "imagenet1k_v1" if config.pretrained else "random",
         "config": config.__dict__,
         "history": history,
         "limitations": plan["limitations"],
@@ -738,7 +740,7 @@ def train_reader(
         pin_memory=device.type == "cuda",
     )
 
-    weights = Weights.DEFAULT if config.pretrained else None
+    weights = Weights.IMAGENET1K_V1 if config.pretrained else None
     model = mobilenet_v3_small(weights=weights)
     model.classifier[-1] = torch.nn.Linear(model.classifier[-1].in_features, len(classes))
     model.to(device)
@@ -818,6 +820,7 @@ def train_reader(
                 "split_sha256": plan["split_sha256"],
                 "epoch": epoch + 1,
                 "validation_accuracy": best_accuracy,
+                "initialization": "imagenet1k_v1" if config.pretrained else "random",
             }, best_path)
 
     gpu = None
@@ -838,6 +841,7 @@ def train_reader(
         "device": str(device),
         "gpu": gpu,
         "torch_version": torch.__version__,
+        "initialization": "imagenet1k_v1" if config.pretrained_backbone else "random",
         "config": config.__dict__,
         "history": history,
         "limitations": plan["limitations"],
