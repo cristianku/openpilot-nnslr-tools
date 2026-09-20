@@ -129,7 +129,7 @@ def evaluate_reader(
                 transforms.ToTensor(),
                 transforms.Normalize(mean=(.485, .456, .406), std=(.229, .224, .225)),
             ])
-            return transform(crop), row["label"]
+            return transform(crop), row["label"], index
 
     loader = DataLoader(
         ReaderDataset(),
@@ -151,19 +151,34 @@ def evaluate_reader(
     total = 0
     total_correct = 0
 
+    samples = []
     with torch.no_grad():
-        for inputs, truth_labels in loader:
+        for inputs, truth_labels, record_indices in loader:
             inputs = inputs.to(device, non_blocking=True)
             logits = model(inputs)
-            predictions = logits.argmax(1).cpu().tolist()
-            for predicted_index, truth_label in zip(predictions, truth_labels):
+            probabilities = torch.softmax(logits, dim=1)
+            predictions = probabilities.argmax(1).cpu().tolist()
+            confidences = probabilities.max(1).values.cpu().tolist()
+            for predicted_index, confidence, truth_label, record_index in zip(
+                predictions, confidences, truth_labels, record_indices.tolist()
+            ):
                 predicted_label = classes[predicted_index]
                 support[truth_label] += 1
                 confusion[truth_label][predicted_label] += 1
                 total += 1
-                if predicted_label == truth_label:
+                is_correct = predicted_label == truth_label
+                if is_correct:
                     correct[truth_label] += 1
                     total_correct += 1
+                row = records[record_index]
+                samples.append({
+                    "annotation_id": row["annotation_id"],
+                    "image_path": row["image_path"],
+                    "truth": truth_label,
+                    "predicted": predicted_label,
+                    "confidence": float(confidence),
+                    "correct": is_correct,
+                })
 
     per_class = {
         label: {
@@ -187,6 +202,7 @@ def evaluate_reader(
             truth: dict(sorted(predictions.items()))
             for truth, predictions in sorted(confusion.items())
         },
+        "samples": samples,
         "checkpoint": str(checkpoint_path),
         "dataset_sha256": plan["dataset_sha256"],
         "split_sha256": plan["split_sha256"],
@@ -257,11 +273,18 @@ def evaluate_detector(
             totals["fn"] += matched["false_negatives"]
             image_results.append({
                 "image_path": frame["image_path"],
+                "image_sha256": frame["image_sha256"],
+                "route_id": frame["route_id"],
+                "segment_index": frame["segment_index"],
+                "truth_boxes": frame["boxes"],
+                "predictions": selected,
                 "truth_count": len(frame["boxes"]),
                 "prediction_count": len(selected),
                 "true_positives": matched["true_positives"],
                 "false_positives": matched["false_positives"],
                 "false_negatives": matched["false_negatives"],
+                "matches": matched["matches"],
+                "false_positive_details": matched["false_positive_details"],
             })
 
     tp, fp, fn = totals["tp"], totals["fp"], totals["fn"]
