@@ -66,6 +66,43 @@ def _safe_image_path(data_root: Path, image_path: str) -> Path:
     return candidate
 
 
+def _load_split_document(split_path: Path, data_root: Path) -> tuple[Path, dict[str, Any]]:
+    """Load a frozen split, following the build-splits latest.json pointer.
+
+    The pointer itself is hash-bound to the immutable split file. A changed
+    or escaped target is rejected before any training plan is produced.
+    """
+    requested = Path(split_path)
+    document = json.loads(requested.read_text(encoding="utf-8"))
+    if isinstance(document, dict) and isinstance(document.get("assignments"), dict):
+        return requested, document
+
+    if not isinstance(document, dict) or not isinstance(document.get("path"), str):
+        raise ValueError("split_invalid: expected assignments or latest pointer")
+
+    root = Path(data_root).resolve()
+    target = Path(document["path"])
+    if not target.is_absolute():
+        target = root / target
+    target = target.resolve()
+    if target != root and root not in target.parents:
+        raise ValueError("unsafe_split_path")
+    if not target.is_file():
+        raise ValueError(f"split_target_missing: {target}")
+
+    expected_sha = document.get("sha256")
+    if not isinstance(expected_sha, str) or len(expected_sha) != 64:
+        raise ValueError("split_pointer_invalid_hash")
+    actual_sha = _sha256(target)
+    if actual_sha != expected_sha:
+        raise ValueError("split_pointer_hash_mismatch")
+
+    resolved = json.loads(target.read_text(encoding="utf-8"))
+    if not isinstance(resolved, dict) or not isinstance(resolved.get("assignments"), dict):
+        raise ValueError("split_invalid: target has no assignments")
+    return target, resolved
+
+
 def prepare_reader_training(
     dataset_path: Path,
     split_path: Path,
@@ -87,7 +124,7 @@ def prepare_reader_training(
         reasons = sorted({str(e.get("reason", "dataset_invalid")) for e in validation.get("errors", [])})
         raise ValueError("dataset_invalid: " + ",".join(reasons))
 
-    split_doc = json.loads(split_path.read_text(encoding="utf-8"))
+    resolved_split_path, split_doc = _load_split_document(split_path, data_root)
     split_errors = validate_splits(
         rows,
         split_doc,
@@ -163,8 +200,9 @@ def prepare_reader_training(
         "dataset_kind": dataset_kind,
         "dataset_path": str(dataset_path),
         "dataset_sha256": validation["dataset_sha256"],
-        "split_path": str(split_path),
-        "split_sha256": _sha256(split_path),
+        "split_path": str(resolved_split_path),
+        "requested_split_path": str(split_path),
+        "split_sha256": _sha256(resolved_split_path),
         "classes": train_labels,
         "records": records,
         "counts_by_split": dict(sorted(counts_by_split.items())),
