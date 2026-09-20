@@ -5,7 +5,7 @@ import json
 import sys
 
 from nnslr_tools.annotations import load_jsonl, validate_dataset
-from nnslr_tools.training import prepare_reader_training
+from nnslr_tools.training import prepare_detector_training, prepare_reader_training
 from test_annotations import invoke, reviewed, write
 
 
@@ -110,3 +110,44 @@ def test_latest_pointer_hash_mismatch_is_rejected(tmp_path, capsys):
         assert "split_pointer_hash_mismatch" in str(exc)
     else:
         raise AssertionError("tampered split pointer was accepted")
+
+
+
+def test_prepare_detector_training_groups_full_frames_without_torch(tmp_path, capsys):
+    dataset, frozen, latest = _training_fixture(tmp_path, capsys)
+    assert "torch" not in sys.modules
+
+    plan = prepare_detector_training(dataset, latest, tmp_path)
+
+    assert plan["trainable"] is True
+    assert plan["classes"] == ["speed_sign"]
+    assert plan["split_path"] == str(frozen)
+    assert plan["boxes_by_split"]["train"] >= 2
+    assert plan["boxes_by_split"]["validation"] >= 2
+    assert plan["negative_frames_by_split"]["hard-negative"] == 1
+    assert all(frame["image_sha256"] for frame in plan["frames"])
+    assert "torch" not in sys.modules
+
+
+def test_detector_train_dry_run_is_cpu_only(tmp_path, capsys):
+    dataset, _, _ = _training_fixture(tmp_path, capsys)
+    assert "torch" not in sys.modules
+
+    code, out = invoke(
+        capsys,
+        "train",
+        str(dataset),
+        "--task",
+        "detector",
+        "--data-root",
+        str(tmp_path),
+        "--dry-run",
+    )
+
+    assert code == 0, out.err + out.out
+    summary = json.loads(out.out)
+    assert summary["task"] == "detector"
+    assert summary["trainable"] is True
+    assert summary["record_count"] >= 5
+    assert "frames" not in summary
+    assert "torch" not in sys.modules
