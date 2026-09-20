@@ -9,8 +9,8 @@ are added by their owning tasks and import only from :mod:`.types` and the
 stdlib.
 """
 
-from . import types
+from . import temporal, types
 
-__all__ = ["types"]
+__all__ = ["temporal", "types"]
 __version__ = "0.1.0"
 # [nnslr-t1] - END
