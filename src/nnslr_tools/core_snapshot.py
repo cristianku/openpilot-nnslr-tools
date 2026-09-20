@@ -12,7 +12,7 @@ from typing import Mapping
 
 
 SOURCE_REPOSITORY = "cristianku/openpilot-nnslr-tools"
-DEFAULT_CORE_FILES = ("__init__.py", "advisory.py", "py.typed", "temporal.py", "types.py")
+DEFAULT_CORE_FILES = ("__init__.py", "advisory.py", "py.typed", "state.py", "temporal.py", "types.py")
 FORBIDDEN_IMPORT_ROOTS = frozenset({
     "torch", "numpy", "cv2", "onnx", "onnxruntime", "tinygrad",
     "openpilot", "cereal", "opendbc", "pandas", "cupy", "pycuda", "triton",
