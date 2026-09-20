@@ -162,19 +162,14 @@ def test_selftest_passes(capsys) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Not-yet-implemented subcommands are documented, not silently stubbed
+# Environment aliases
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "check-environment",
-    ],
-)
-def test_not_implemented_subcommands_exit_three(capsys, name) -> None:
-    code, _, err = run([name], capsys)
-    assert code == 3
-    assert "not implemented" in err.lower()
+def test_check_environment_alias_is_implemented(capsys) -> None:
+    code, out, err = run(["check-environment"], capsys)
+    assert code == 0, err
+    payload = json.loads(out)
+    assert payload["gpu"]["status"] == "untested"
 
 
 # [training-baseline] - START
