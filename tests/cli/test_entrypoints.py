@@ -169,7 +169,7 @@ def test_selftest_passes(capsys) -> None:
     "name",
     [
         # [reviewed-dataset] - START
-        "train", "evaluate",
+        "evaluate",
         # [reviewed-dataset] - END
         "mine-hard-examples", "export-onnx", "replay",
         "package-model", "verify-bundle", "export-core",
@@ -179,3 +179,11 @@ def test_not_implemented_subcommands_exit_three(capsys, name) -> None:
     code, _, err = run([name], capsys)
     assert code == 3
     assert "not implemented" in err.lower()
+
+
+# [training-baseline] - START
+def test_train_is_implemented_and_requires_dataset_inputs(capsys, tmp_path) -> None:
+    code, _, err = run(["train", "--dry-run", "--data-root", str(tmp_path)], capsys)
+    assert code == 2
+    assert "objects.jsonl" in err
+# [training-baseline] - END
