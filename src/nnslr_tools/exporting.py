@@ -53,9 +53,18 @@ def reader_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def detector_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
+def detector_io_contract(
+    checkpoint: dict[str, Any],
+    *,
+    input_width: int = 1344,
+    input_height: int = 760,
+) -> dict[str, Any]:
     if checkpoint.get("task") != "detector":
         raise ValueError("checkpoint_task_mismatch: expected detector")
+    if type(input_width) is not int or input_width <= 0:
+        raise ValueError("invalid_detector_input_width")
+    if type(input_height) is not int or input_height <= 0:
+        raise ValueError("invalid_detector_input_height")
     classes = checkpoint.get("classes")
     if classes not in (["background", "speed_sign"], ["speed_sign"]):
         raise ValueError("checkpoint_invalid_classes")
@@ -65,16 +74,18 @@ def detector_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
         "architecture": "ssdlite320_mobilenet_v3_large",
         "input": {
             "name": "images",
-            "shape": [1, 3, 320, 320],
+            "shape": [1, 3, input_height, input_width],
             "dtype": "float32",
             "layout": "NCHW",
             "color": "RGB",
             "value_range": [0.0, 1.0],
-            "source": "full_frame",
-            "resize": [320, 320],
+            "source": "native_narrow_road_frame",
+            "external_resize": None,
+            "model_internal_resize": [320, 320],
+            "model_internal_resize_mode": "bilinear",
             "model_internal_normalization": {
-                "mean": [0.485, 0.456, 0.406],
-                "std": [0.229, 0.224, 0.225],
+                "mean": [0.5, 0.5, 0.5],
+                "std": [0.5, 0.5, 0.5],
             },
         },
         "outputs": {
@@ -93,6 +104,8 @@ def export_detector_onnx(
     output_path: Path,
     *,
     verify: bool = True,
+    input_width: int = 1344,
+    input_height: int = 760,
 ) -> dict[str, Any]:
     (
         torch,
@@ -105,7 +118,11 @@ def export_detector_onnx(
     ) = _require_detector_stack()
 
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=True)
-    contract = detector_io_contract(checkpoint)
+    contract = detector_io_contract(
+        checkpoint,
+        input_width=input_width,
+        input_height=input_height,
+    )
 
     model = ssdlite320_mobilenet_v3_large(
         weights=None,
@@ -125,7 +142,7 @@ def export_detector_onnx(
             return result["boxes"], result["scores"], result["labels"]
 
     wrapper = ExportWrapper(model).eval()
-    example = torch.rand(1, 3, 320, 320, dtype=torch.float32)
+    example = torch.rand(1, 3, input_height, input_width, dtype=torch.float32)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
