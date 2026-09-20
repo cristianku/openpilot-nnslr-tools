@@ -127,9 +127,9 @@ removed and the narrow-camera/full-rlog set was downloaded again as requested.
 
 ---
 
-## 3. Dataset / annotation work still missing
+## 3. Dataset / annotation source implemented; corpus coverage still pending
 
-The following commands are not implemented yet:
+The canonical reviewed-dataset tooling is implemented on `main`:
 
 ```text
 nnslr import-annotations
@@ -137,35 +137,23 @@ nnslr validate-dataset
 nnslr build-splits
 ```
 
-Required annotation contract should cover at least:
+The schema records route/segment/frame identity, image/source hashes, bbox,
+sign family, value state/value, applicability, supplementary panel,
+visibility/occlusion, review state and timing provenance. Human gold data and
+model-reviewed training candidates are kept as distinct dataset kinds.
 
-```text
-route / segment / frame
-bbox
-sign family
-value state
-value_kph optional
-linked supplementary panel
-own-road / other-road / unresolved
-visibility / occlusion
-review state
-```
+Splits are deterministic and leakage-safe across connected route, physical-site,
+encounter and duplicate-image groups; adjacent video frames are never randomly
+mixed just to satisfy ratios. Rejected proposals remain audit-only records.
 
-Minimum sign vocabulary:
+Still required as evidence rather than source code:
 
-```text
-maximum speed
-cancellation
-zone
-variable display
-other sign
-not a sign
-unreadable
-```
-
-Hard negatives must include ramps, parallel roads, junctions, advertising, rear of signs, distant signs, glare, blur, rain, night, tunnels, temporary signs, electronic signs, and partial supplementary panels.
-
-Dataset splits must be leakage-safe at route/sequence level rather than randomly mixing adjacent video frames.
+- a sufficiently large human-reviewed Swiss gold corpus;
+- broader negative/challenge coverage (ramps, parallel roads, junctions,
+  advertising, rear of signs, glare, blur, rain, night, tunnels, temporary and
+  electronic signs, supplementary panels);
+- reviewed repeated-site labels where different routes revisit the same sign;
+- completion of the independent synchronization evidence for the T2 gate.
 
 ---
 
@@ -212,27 +200,48 @@ vehicle speed target.
 
 ---
 
-## 5. Export and model bundle
+## 5. Export, replay and immutable model bundle source implemented
 
-Reader reference ONNX export is now implemented:
-
-```text
-nnslr export-onnx --checkpoint reader-best.pt --output reader.onnx
-```
-
-It freezes the crop/resize/normalization/class contract, emits hashes, checks
-the ONNX model and by default verifies numerical parity with ONNX Runtime.
-
-Offline detector→reader route replay is now implemented in source and preserves frame/timing provenance. It remains unmeasured until real checkpoints exist.
-
-Still missing:
+Reference ONNX export exists for both baselines:
 
 ```text
-detector ONNX/reference export
-nnslr package-model
-nnslr verify-bundle
-nnslr export-core
+nnslr export-onnx --task detector --checkpoint detector-best.pt --output detector.onnx
+nnslr export-onnx --task reader   --checkpoint reader-best.pt   --output reader.onnx
 ```
+
+Each export freezes its I/O/preprocessing contract, records checkpoint/model
+hashes, validates the ONNX graph and by default performs numerical parity with
+ONNX Runtime. The detector contract includes boxes/scores/labels and its
+post-processing/NMS path. Real checkpoint exports still need to be executed
+before target compatibility can be claimed.
+
+Offline detector→reader route replay is implemented and preserves decoded-frame,
+media-time and capture-time provenance:
+
+```text
+nnslr replay --route ROUTE --detector-checkpoint ... --reader-checkpoint ... --output ...
+```
+
+Immutable packaging and verification are also implemented:
+
+```text
+nnslr package-model ...
+nnslr verify-bundle BUNDLE
+nnslr export-core --output DIRECTORY
+```
+
+`package-model` refuses unverified ONNX contracts or detector/reader artifacts
+with different dataset/split provenance. The bundle freezes model files,
+contracts, classes, capability limits and per-file SHA-256 hashes; verification
+rejects tampering. `export-core` independently snapshots the stdlib-only
+`speed_vision_core` with the same file-hash/tree-digest style consumed by
+Sunnypilot.
+
+Still required:
+
+- execute detector and reader ONNX parity on real trained checkpoints;
+- benchmark the selected model bundle on the actual target backend;
+- freeze the first accepted model/core/bundle hashes in the runtime artifact lock.
 
 Expected logical bundle:
 
