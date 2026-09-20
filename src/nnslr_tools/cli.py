@@ -707,12 +707,77 @@ def _cmd_train(args: argparse.Namespace) -> int:
 # [training-baseline] - END
 
 
+# [evaluation-baseline] - START
+def _cmd_evaluate(args: argparse.Namespace) -> int:
+    from nnslr_tools.preannotate import resolve_data_root
+    from nnslr_tools.training import prepare_detector_training, prepare_reader_training
+
+    root = resolve_data_root(Path(args.data_root) if args.data_root else None)
+    kind = args.dataset_kind
+    default_dataset = (
+        root / "datasets" / "training_candidate_dataset" / "objects.jsonl"
+        if kind == "training-candidate"
+        else root / "annotations" / "objects.jsonl"
+    )
+    dataset = Path(args.dataset) if args.dataset else default_dataset
+    splits = Path(args.splits) if args.splits else root / "splits" / "latest.json"
+
+    if args.task == "detector":
+        plan = prepare_detector_training(dataset, splits, root, dataset_kind=kind)
+        selected = [r for r in plan["frames"] if r["split"] == args.partition]
+    else:
+        plan = prepare_reader_training(dataset, splits, root, dataset_kind=kind)
+        selected = [r for r in plan["records"] if r["split"] == args.partition]
+
+    if args.dry_run:
+        report = {
+            "task": args.task,
+            "partition": args.partition,
+            "dataset_kind": kind,
+            "dataset_sha256": plan["dataset_sha256"],
+            "split_sha256": plan["split_sha256"],
+            "sample_count": len(selected),
+            "checkpoint_required_for_execution": True,
+        }
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if selected else 1
+
+    if not args.checkpoint:
+        raise ValueError("--checkpoint is required unless --dry-run")
+
+    from nnslr_tools.evaluation import evaluate_detector, evaluate_reader, write_evaluation
+
+    if args.task == "detector":
+        report = evaluate_detector(
+            plan,
+            Path(args.checkpoint),
+            root,
+            partition=args.partition,
+            device_name=args.device,
+            score_threshold=args.score_threshold,
+            iou_threshold=args.iou_threshold,
+        )
+    else:
+        report = evaluate_reader(
+            plan,
+            Path(args.checkpoint),
+            root,
+            partition=args.partition,
+            device_name=args.device,
+            batch_size=args.batch_size if args.batch_size is not None else 64,
+            num_workers=args.num_workers,
+        )
+    write_evaluation(report, Path(args.output) if args.output else None)
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0
+# [evaluation-baseline] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "evaluate": ("T5", "offline evaluation lands in T5"),
     "mine-hard-examples": ("T6", "hard-example mining lands in T6"),
     "export-onnx": ("T7", "ONNX export lands in T7"),
     "replay": ("T7", "annotated replay lands in T7"),
@@ -959,6 +1024,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--no-amp", action="store_true", help="disable CUDA automatic mixed precision")
     p_train.set_defaults(func=_cmd_train)
     # [training-baseline] - END
+
+    # [evaluation-baseline] - START
+    p_eval = sub.add_parser(
+        "evaluate",
+        help="evaluate reader or detector checkpoints on a frozen dataset partition",
+    )
+    p_eval.add_argument("dataset", nargs="?", help="canonical dataset JSONL; defaults from --dataset-kind")
+    p_eval.add_argument("--task", choices=("reader", "detector"), default="reader")
+    p_eval.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_eval.add_argument("--splits", help="frozen split JSON; default: <data-root>/splits/latest.json")
+    p_eval.add_argument("--dataset-kind", choices=("gold", "training-candidate"), default="gold")
+    p_eval.add_argument(
+        "--partition",
+        choices=("train", "validation", "test", "route-held-out", "hard-negative"),
+        default="test",
+    )
+    p_eval.add_argument("--checkpoint", help="reader-best.pt or detector-best.pt; required unless --dry-run")
+    p_eval.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    p_eval.add_argument("--batch-size", type=int, default=None, help="reader evaluation batch size (default: 64)")
+    p_eval.add_argument("--num-workers", type=int, default=4)
+    p_eval.add_argument("--score-threshold", type=float, default=.25, help="detector score threshold")
+    p_eval.add_argument("--iou-threshold", type=float, default=.5, help="detector IoU match threshold")
+    p_eval.add_argument("--dry-run", action="store_true", help="validate the evaluation population without importing torch")
+    p_eval.add_argument("--output", help="optional JSON report path")
+    p_eval.set_defaults(func=_cmd_evaluate)
+    # [evaluation-baseline] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
