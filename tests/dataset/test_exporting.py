@@ -16,11 +16,11 @@ def test_reader_io_contract_freezes_preprocessing_and_classes() -> None:
         }
     )
 
-    assert contract["input"]["shape"] == ["batch", 3, 160, 160]
+    assert contract["input"]["shape"] == [1, 3, 160, 160]
     assert contract["input"]["layout"] == "NCHW"
     assert contract["input"]["color"] == "RGB"
     assert contract["input"]["normalization"]["mean"] == [0.485, 0.456, 0.406]
-    assert contract["output"]["shape"] == ["batch", 2]
+    assert contract["output"]["shape"] == [1, 2]
     assert contract["output"]["classes"] == ["maximum_speed:30", "maximum_speed:50"]
 
 
