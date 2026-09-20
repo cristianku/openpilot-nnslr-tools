@@ -595,6 +595,28 @@ nnslr mine-hard-examples \
 
 No checkpoint is automatically copied to Sunnypilot or the Comma.
 
+## Offline end-to-end replay
+
+Once both checkpoints exist, the extracted route can be processed end to end:
+
+```sh
+nnslr replay --route ROUTE_ID \
+  --detector-checkpoint "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector-best.pt" \
+  --reader-checkpoint "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader-best.pt" \
+  --output "$NNSLR_DATA_ROOT/evaluation/ROUTE_ID-replay.jsonl"
+```
+
+Before any model exists, validate the route inventory with no PyTorch/GPU:
+
+```sh
+nnslr replay --route ROUTE_ID --dry-run
+```
+
+Replay preserves decoded-frame identity, media timing and verified capture
+provenance from the extraction manifests. It emits detector boxes and reader
+labels only. It deliberately does **not** perform temporal consensus, road
+ownership, passage/current-limit inference, or any vehicle-control action.
+
 ## What is not implemented yet (documented, not stubbed)
 
 `nnslr` lists these subcommands and refuses them with exit code `3` so a clean
@@ -603,7 +625,7 @@ clone documents what does not exist rather than pretending:
 <!-- [nnslr-sync] - START -->
 `check-environment` (full);
 <!-- [nnslr-sync] - END -->
-`export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).
+`package-model`, `verify-bundle`, `export-core` (T8). Detector ONNX export also remains pending.
 
 See `docs/plan.md` for the full task breakdown and `docs/vision-speed-limit/`
 for decisions (D1–D8) and the T0 audit.
