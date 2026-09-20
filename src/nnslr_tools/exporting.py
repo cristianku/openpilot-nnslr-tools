@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from nnslr_tools.training import _require_training_stack
+from nnslr_tools.training import _require_detector_stack, _require_training_stack
 
 
 def sha256_file(path: Path) -> str:
@@ -102,7 +102,7 @@ def export_detector_onnx(
         _,
         _,
         ssdlite320_mobilenet_v3_large,
-    ) = __import__("nnslr_tools.training", fromlist=["_require_detector_stack"])._require_detector_stack()
+    ) = _require_detector_stack()
 
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=True)
     contract = detector_io_contract(checkpoint)
