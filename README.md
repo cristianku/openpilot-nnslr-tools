@@ -497,17 +497,31 @@ default. Generate alignments with the current `align-route` command: older
 files without source hashes are rejected rather than trusted implicitly.
 <!-- [reviewed-dataset] - END -->
 
-## Reader baseline training (T4 started)
+## Detector + reader baseline training (T4)
 
-The first real training surface is now available. It trains a
-`MobileNetV3-Small` **reader** from reviewed sign bounding-box crops. It does
-not train the detector yet and does not produce an on-device model bundle.
+The first complete perception-training surface is now available:
+
+```text
+full frame
+   ↓
+SSDLite320 + MobileNetV3 detector
+   ↓
+reviewed sign crop
+   ↓
+MobileNetV3-Small reader
+```
+
+The detector is currently a single-class vertical speed-sign detector. Road
+markings remain separate, and `other_sign` annotations are not silently treated
+as whole-frame negatives. These are baselines and do not produce an on-device
+model bundle yet.
 
 Validate the exact dataset and frozen split without importing PyTorch or touching
 a GPU:
 
 ```sh
-nnslr train --dry-run
+nnslr train --task reader --dry-run
+nnslr train --task detector --dry-run
 ```
 
 By default this uses the gold human-reviewed dataset and follows the
@@ -531,16 +545,55 @@ V100 the capability must be `(7, 0)` / `sm_70`.
 A real training run requires a new output directory:
 
 ```sh
-nnslr train \
+nnslr train --task detector \
+  --output "$NNSLR_DATA_ROOT/runs/detector-baseline-001" \
+  --device cuda --epochs 20
+
+nnslr train --task reader \
   --output "$NNSLR_DATA_ROOT/runs/reader-baseline-001" \
-  --device cuda \
-  --epochs 20
+  --device cuda --epochs 20
 ```
 
-The run writes an immutable training plan, best checkpoint and JSON result,
-including dataset/split hashes and GPU identity. This baseline is research
-evidence only: no checkpoint is automatically copied to Sunnypilot or the
-Comma.
+Each run writes an immutable training plan, best checkpoint and JSON result,
+including dataset/split hashes and GPU identity.
+
+## Offline evaluation and hard-example mining (T5/T6)
+
+Inspect the frozen evaluation population without importing PyTorch:
+
+```sh
+nnslr evaluate --task detector --partition test --dry-run
+nnslr evaluate --task reader --partition test --dry-run
+```
+
+After training:
+
+```sh
+nnslr evaluate --task detector \
+  --checkpoint "$NNSLR_DATA_ROOT/runs/detector-baseline-001/detector-best.pt" \
+  --partition test \
+  --output "$NNSLR_DATA_ROOT/evaluation/detector-test.json"
+
+nnslr evaluate --task reader \
+  --checkpoint "$NNSLR_DATA_ROOT/runs/reader-baseline-001/reader-best.pt" \
+  --partition test \
+  --output "$NNSLR_DATA_ROOT/evaluation/reader-test.json"
+```
+
+Reader evaluation records accuracy, per-class support and confusion plus
+sample-level mistakes. Detector evaluation records IoU-based precision, recall,
+F1 and false positives per image while retaining the individual error evidence.
+COCO-style mAP and time-based false positives/hour remain later evaluation work.
+
+Feed those errors directly into the next dataset iteration:
+
+```sh
+nnslr mine-hard-examples \
+  "$NNSLR_DATA_ROOT/evaluation/detector-test.json" \
+  --output "$NNSLR_DATA_ROOT/evaluation/detector-hard.jsonl"
+```
+
+No checkpoint is automatically copied to Sunnypilot or the Comma.
 
 ## What is not implemented yet (documented, not stubbed)
 
@@ -550,7 +603,6 @@ clone documents what does not exist rather than pretending:
 <!-- [nnslr-sync] - START -->
 `check-environment` (full);
 <!-- [nnslr-sync] - END -->
-`evaluate` (T5), `mine-hard-examples` (T6),
 `export-onnx`, `replay`, `package-model`, `verify-bundle`, `export-core` (T7–T8).
 
 See `docs/plan.md` for the full task breakdown and `docs/vision-speed-limit/`
