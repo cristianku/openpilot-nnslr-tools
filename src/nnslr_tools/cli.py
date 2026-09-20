@@ -639,7 +639,14 @@ def _cmd_sync_routes(args: argparse.Namespace) -> int:
 # [training-baseline] - START
 def _cmd_train(args: argparse.Namespace) -> int:
     from nnslr_tools.preannotate import resolve_data_root
-    from nnslr_tools.training import TrainConfig, prepare_reader_training, train_reader
+    from nnslr_tools.training import (
+        DetectorTrainConfig,
+        TrainConfig,
+        prepare_detector_training,
+        prepare_reader_training,
+        train_detector,
+        train_reader,
+    )
 
     root = resolve_data_root(Path(args.data_root) if args.data_root else None)
     kind = args.dataset_kind
@@ -651,29 +658,50 @@ def _cmd_train(args: argparse.Namespace) -> int:
     dataset = Path(args.dataset) if args.dataset else default_dataset
     splits = Path(args.splits) if args.splits else root / "splits" / "latest.json"
 
-    plan = prepare_reader_training(dataset, splits, root, dataset_kind=kind)
+    if args.task == "detector":
+        plan = prepare_detector_training(dataset, splits, root, dataset_kind=kind)
+    else:
+        plan = prepare_reader_training(dataset, splits, root, dataset_kind=kind)
+
     if args.dry_run:
         summary = dict(plan)
-        summary["record_count"] = len(plan["records"])
-        summary.pop("records", None)
+        detail_key = "frames" if args.task == "detector" else "records"
+        summary["record_count"] = len(plan[detail_key])
+        summary.pop(detail_key, None)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0 if plan["trainable"] else 1
 
     if not args.output:
         raise ValueError("--output is required for a real training run")
-    config = TrainConfig(
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        input_size=args.input_size,
-        num_workers=args.num_workers,
-        seed=args.seed,
-        device=args.device,
-        pretrained=args.pretrained,
-        amp=not args.no_amp,
-    )
-    result = train_reader(plan, root, Path(args.output), config)
+
+    if args.task == "detector":
+        config = DetectorTrainConfig(
+            epochs=args.epochs,
+            batch_size=args.batch_size if args.batch_size is not None else 8,
+            learning_rate=args.learning_rate if args.learning_rate is not None else 1e-4,
+            weight_decay=args.weight_decay,
+            num_workers=args.num_workers,
+            seed=args.seed,
+            device=args.device,
+            pretrained_backbone=args.pretrained,
+            amp=not args.no_amp,
+        )
+        result = train_detector(plan, root, Path(args.output), config)
+    else:
+        config = TrainConfig(
+            epochs=args.epochs,
+            batch_size=args.batch_size if args.batch_size is not None else 64,
+            learning_rate=args.learning_rate if args.learning_rate is not None else 3e-4,
+            weight_decay=args.weight_decay,
+            input_size=args.input_size,
+            num_workers=args.num_workers,
+            seed=args.seed,
+            device=args.device,
+            pretrained=args.pretrained,
+            amp=not args.no_amp,
+        )
+        result = train_reader(plan, root, Path(args.output), config)
+
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 # [training-baseline] - END
@@ -906,9 +934,11 @@ def build_parser() -> argparse.ArgumentParser:
     # [training-baseline] - START
     p_train = sub.add_parser(
         "train",
-        help="train the first reviewed-crop reader baseline; use --dry-run for a CPU-only plan",
+        help="train reader or detector baselines; use --dry-run for a CPU-only plan",
     )
     p_train.add_argument("dataset", nargs="?", help="canonical dataset JSONL; defaults from --dataset-kind")
+    p_train.add_argument("--task", choices=("reader", "detector"), default="reader",
+                         help="baseline task to train (default: reader)")
     p_train.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
     p_train.add_argument("--splits", help="frozen split JSON; default: <data-root>/splits/latest.json")
     p_train.add_argument("--dataset-kind", choices=("gold", "training-candidate"), default="gold")
@@ -916,13 +946,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--output", help="new output directory; required unless --dry-run")
     p_train.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     p_train.add_argument("--epochs", type=int, default=20)
-    p_train.add_argument("--batch-size", type=int, default=64)
-    p_train.add_argument("--learning-rate", type=float, default=3e-4)
+    p_train.add_argument("--batch-size", type=int, default=None,
+                         help="default: reader 64, detector 8")
+    p_train.add_argument("--learning-rate", type=float, default=None,
+                         help="default: reader 3e-4, detector 1e-4")
     p_train.add_argument("--weight-decay", type=float, default=1e-4)
     p_train.add_argument("--input-size", type=int, default=160)
     p_train.add_argument("--num-workers", type=int, default=4)
     p_train.add_argument("--seed", type=int, default=0)
-    p_train.add_argument("--pretrained", action="store_true", help="allow torchvision to obtain ImageNet weights if they are not cached")
+    p_train.add_argument("--pretrained", action="store_true",
+                         help="allow torchvision ImageNet weights for the reader/backbone if not cached")
     p_train.add_argument("--no-amp", action="store_true", help="disable CUDA automatic mixed precision")
     p_train.set_defaults(func=_cmd_train)
     # [training-baseline] - END
