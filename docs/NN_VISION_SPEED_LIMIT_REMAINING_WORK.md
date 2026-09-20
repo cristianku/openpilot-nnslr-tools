@@ -452,81 +452,70 @@ Do not put road-law interpretation inside the detector/reader.
 
 ---
 
-## 8. Temporal semantics still missing/incomplete
+## 8. Temporal semantics — bounded consensus/state gates implemented
 
-A single frame must not become a current speed-limit hypothesis.
-
-Required stages:
+The portable core now contains a conservative temporal reference profile:
 
 ```text
-Detection
-  ↓
-SignTrack
-  ↓
-temporal consensus
-  ↓
-road ownership
-  ↓
-passage / activation
-  ↓
-LimitHypothesis
+3 coherent unique captures
+out of at most 5 recent observations
+inside an 0.8 s window
 ```
 
-Initial temporal profile to evaluate:
+It operates only on observations already associated to the same candidate
+physical track. Duplicate captures cannot count twice, old evidence falls out
+of the window, and a single frame can never establish a numeric track
+consensus.
+
+The hypothesis gate is explicit:
 
 ```text
-3 unique observations of 5
-within roughly 0.8 s
+stable value + ownership UNKNOWN → OBSERVED
+stable value + ownership OTHER   → UNCERTAIN
+stable value + OWN + AHEAD       → AHEAD
+stable value + OWN + PASSED      → CURRENT
 ```
 
-but thresholds must be frozen before evaluation.
+`CURRENT` is usable for advisory only in the final case. Sign disappearance
+alone is never treated as passage evidence.
 
-### Road ownership
+A fail-closed perception-health gate is also implemented. Backend unavailable,
+fault, detection overflow, missing/future processed capture, or capture age over
+the configured freshness threshold invalidates the prior value and yields
+`UNAVAILABLE`.
 
-Must distinguish:
+Still missing as real algorithms/evidence:
 
-```text
-OWN
-OTHER
-UNKNOWN
-```
-
-A correctly read sign on an exit ramp must not become the current limit of the main carriageway.
-
-### Passage
-
-States should remain explicit:
-
-```text
-OBSERVED
-AHEAD
-CURRENT
-UNCERTAIN
-UNAVAILABLE
-```
-
-A sign disappearing from camera view is not, by itself, proof that the vehicle passed it.
+- physical sign track association from sequential detector observations;
+- calibrated road ownership using camera geometry/context, with OWN/OTHER/UNKNOWN;
+- verified passage/crossing evidence using ego motion/context;
+- evaluation/freeze of the proposed 3-of-5 / 0.8 s profile on real routes.
 
 ---
 
-## 9. CAR / MAP / VISION comparison
+## 9. CAR / MAP / VISION comparison — advisory core implemented
 
-The comparator is advisory only.
+The portable core now has a separate read-only comparator. It never mutates
+CAR/MAP snapshots and has no target-speed or control output.
+
+Behavior follows the project table:
 
 ```text
-CAR
-MAP
-VISION
- ↓
-agree / conflict / insufficient_data
+Vision absent/stale/unavailable → no current claim
+Vision OBSERVED                 → separate observed indication
+Vision AHEAD                    → separate ahead indication
+Vision CURRENT + CAR/MAP agree  → AGREE
+Vision CURRENT + source differs → CONFLICT
+Vision CURRENT + sources absent → current Vision indication, insufficient_data
 ```
 
-Do not:
+Only fresh/valid operational snapshots participate. Agreement tolerance and age
+limits are explicit profile fields rather than hidden constants, and source
+timestamps are preserved.
 
-- boost Vision confidence just because MAP agrees;
-- fill a missing Vision value from MAP;
-- overwrite Vision with CAR;
-- route Vision into the operational SLA resolver.
+This remains diagnostic/advisory evidence only. Vision is still not inserted
+into the operational `SpeedLimitResolver`, and source agreement never boosts
+model confidence or becomes training truth.
 
 ---
 
