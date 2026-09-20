@@ -244,6 +244,49 @@ def _require_training_stack():
     return torch, Image, DataLoader, Dataset, transforms, MobileNet_V3_Small_Weights, mobilenet_v3_small
 
 
+def gpu_smoke(device_index: int = 0) -> dict[str, Any]:
+    """Run an explicit CUDA forward/backward smoke test.
+
+    This function is never called implicitly. It verifies that the installed
+    PyTorch binary can actually execute kernels for the selected GPU.
+    """
+    torch, *_ = _require_training_stack()
+    if not torch.cuda.is_available():
+        raise ValueError("cuda_unavailable")
+    if device_index < 0 or device_index >= torch.cuda.device_count():
+        raise ValueError(f"cuda_device_out_of_range: {device_index}")
+
+    device = torch.device(f"cuda:{device_index}")
+    capability = tuple(torch.cuda.get_device_capability(device))
+    compiled_arches = list(torch.cuda.get_arch_list())
+    expected_arch = f"sm_{capability[0]}{capability[1]}"
+    if expected_arch not in compiled_arches:
+        raise ValueError(
+            f"cuda_arch_not_compiled: device={expected_arch} compiled={compiled_arches}"
+        )
+
+    # Small enough to be a smoke test, large enough to execute real FP16 GEMM
+    # and autograd kernels. This intentionally allocates GPU memory.
+    x = torch.randn((1024, 1024), device=device, dtype=torch.float16, requires_grad=True)
+    y = (x @ x.T).mean()
+    y.backward()
+    torch.cuda.synchronize(device)
+
+    props = torch.cuda.get_device_properties(device)
+    return {
+        "status": "available",
+        "torch_version": torch.__version__,
+        "torch_cuda_runtime": torch.version.cuda,
+        "device_index": device_index,
+        "device_name": props.name,
+        "capability": list(capability),
+        "compiled_arches": compiled_arches,
+        "total_memory_bytes": int(props.total_memory),
+        "fp16_forward_backward": True,
+        "finite_result": bool(torch.isfinite(y.detach()).item()),
+    }
+
+
 def train_reader(
     plan: dict[str, Any],
     data_root: Path,
