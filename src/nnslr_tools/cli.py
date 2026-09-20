@@ -783,12 +783,25 @@ def _cmd_mine_hard_examples(args: argparse.Namespace) -> int:
 # [hard-example-mining] - END
 
 
+# [onnx-export] - START
+def _cmd_export_onnx(args: argparse.Namespace) -> int:
+    from nnslr_tools.exporting import export_reader_onnx
+
+    report = export_reader_onnx(
+        Path(args.checkpoint),
+        Path(args.output),
+        verify=not args.no_verify,
+    )
+    print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
+    return 0
+# [onnx-export] - END
+
+
 # Not-yet-implemented subcommands (documented, not stubbed)
 # ---------------------------------------------------------------------------
 
 _NOT_IMPLEMENTED: dict[str, tuple[str, str]] = {
     "check-environment": ("T1", "full report is implemented via `nnslr env`"),
-    "export-onnx": ("T7", "ONNX export lands in T7"),
     "replay": ("T7", "annotated replay lands in T7"),
     "package-model": ("T8", "bundle packaging lands in T8"),
     "verify-bundle": ("T8", "bundle verification lands in T8"),
@@ -1069,6 +1082,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_mine.add_argument("--output", required=True, help="output JSONL manifest of hard examples")
     p_mine.set_defaults(func=_cmd_mine_hard_examples)
     # [hard-example-mining] - END
+
+    # [onnx-export] - START
+    p_export = sub.add_parser(
+        "export-onnx",
+        help="export the trained reader checkpoint to a verified ONNX reference artifact",
+    )
+    p_export.add_argument("--checkpoint", required=True, help="reader-best.pt checkpoint")
+    p_export.add_argument("--output", required=True, help="target .onnx path")
+    p_export.add_argument("--no-verify", action="store_true", help="skip ONNX Runtime numerical parity verification")
+    p_export.set_defaults(func=_cmd_export_onnx)
+    # [onnx-export] - END
 
     for name in _NOT_IMPLEMENTED:
         p = sub.add_parser(name, help=f"NOT IMPLEMENTED YET (planned in {_NOT_IMPLEMENTED[name][0]})")
