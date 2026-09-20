@@ -50,6 +50,7 @@ def reader_io_contract(checkpoint: dict[str, Any]) -> dict[str, Any]:
         },
         "dataset_sha256": checkpoint.get("dataset_sha256"),
         "split_sha256": checkpoint.get("split_sha256"),
+        "training_initialization": checkpoint.get("initialization", "unknown"),
     }
 
 
@@ -96,6 +97,7 @@ def detector_io_contract(
         "postprocessing": "model_includes_score_filtering_and_nms",
         "dataset_sha256": checkpoint.get("dataset_sha256"),
         "split_sha256": checkpoint.get("split_sha256"),
+        "training_initialization": checkpoint.get("initialization", "unknown"),
     }
 
 
