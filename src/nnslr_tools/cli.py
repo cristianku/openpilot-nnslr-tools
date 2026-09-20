@@ -809,37 +809,60 @@ def _cmd_export_onnx(args: argparse.Namespace) -> int:
 # [offline-replay] - START
 def _cmd_replay(args: argparse.Namespace) -> int:
     from nnslr_tools.preannotate import resolve_data_root
-    from nnslr_tools.replay import load_route_frames, replay_route
+    from nnslr_tools.replay import load_route_frames, replay_bundle_route, replay_route
 
     root = resolve_data_root(Path(args.data_root) if args.data_root else None)
     frames, manifests = load_route_frames(root, args.route)
+
+    if args.bundle and (args.detector_checkpoint or args.reader_checkpoint):
+        raise ValueError("--bundle cannot be combined with checkpoint arguments")
+
     if args.dry_run:
-        print(json.dumps({
+        report = {
             "valid": True,
             "route_id": args.route,
             "frame_count": len(frames),
             "manifests": manifests,
             "gpu_required": False,
-            "checkpoints_required_for_execution": True,
-        }, indent=2, sort_keys=True))
+            "checkpoints_required_for_execution": not bool(args.bundle),
+            "bundle": args.bundle,
+        }
+        if args.bundle:
+            from nnslr_tools.bundle_runtime import reference_runtime_info
+            report["bundle_runtime"] = reference_runtime_info(Path(args.bundle))
+        print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if frames else 1
 
-    if not args.detector_checkpoint or not args.reader_checkpoint:
-        raise ValueError("--detector-checkpoint and --reader-checkpoint are required unless --dry-run")
     if not args.output:
         raise ValueError("--output is required unless --dry-run")
 
-    report = replay_route(
-        root,
-        args.route,
-        Path(args.detector_checkpoint),
-        Path(args.reader_checkpoint),
-        Path(args.output),
-        device_name=args.device,
-        detector_threshold=args.detector_threshold,
-        reader_threshold=args.reader_threshold,
-        max_detections=args.max_detections,
-    )
+    if args.bundle:
+        report = replay_bundle_route(
+            root,
+            args.route,
+            Path(args.bundle),
+            Path(args.output),
+            detector_threshold=args.detector_threshold,
+            reader_threshold=args.reader_threshold,
+            max_detections=args.max_detections,
+        )
+    else:
+        if not args.detector_checkpoint or not args.reader_checkpoint:
+            raise ValueError(
+                "--detector-checkpoint and --reader-checkpoint are required "
+                "when --bundle is not used"
+            )
+        report = replay_route(
+            root,
+            args.route,
+            Path(args.detector_checkpoint),
+            Path(args.reader_checkpoint),
+            Path(args.output),
+            device_name=args.device,
+            detector_threshold=args.detector_threshold,
+            reader_threshold=args.reader_threshold,
+            max_detections=args.max_detections,
+        )
     print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
     return 0
 # [offline-replay] - END
@@ -1190,6 +1213,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_replay.add_argument("--route", required=True, help="local extracted route ID")
     p_replay.add_argument("--data-root", help="default: NNSLR_DATA_ROOT or /srv/nnslr-data")
+    p_replay.add_argument("--bundle", help="verified packaged ONNX bundle; uses CPU reference runtime")
     p_replay.add_argument("--detector-checkpoint", help="detector-best.pt")
     p_replay.add_argument("--reader-checkpoint", help="reader-best.pt")
     p_replay.add_argument("--output", help="output JSONL; required unless --dry-run")
