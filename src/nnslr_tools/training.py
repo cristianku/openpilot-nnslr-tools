@@ -429,6 +429,241 @@ def gpu_smoke(device_index: int = 0) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class DetectorTrainConfig:
+    epochs: int = 20
+    batch_size: int = 8
+    learning_rate: float = 1e-4
+    weight_decay: float = 1e-4
+    num_workers: int = 4
+    seed: int = 0
+    device: str = "cuda"
+    pretrained_backbone: bool = False
+    amp: bool = True
+
+
+def _require_detector_stack():
+    try:
+        import torch
+        from PIL import Image
+        from torch.utils.data import DataLoader, Dataset
+        from torchvision.transforms import functional as TF
+        from torchvision.models import MobileNet_V3_Large_Weights
+        from torchvision.models.detection import ssdlite320_mobilenet_v3_large
+    except ImportError as exc:
+        raise ValueError(
+            "training_dependencies_missing: detector training needs a V100-compatible "
+            "PyTorch/torchvision environment plus Pillow"
+        ) from exc
+    return (
+        torch,
+        Image,
+        DataLoader,
+        Dataset,
+        TF,
+        MobileNet_V3_Large_Weights,
+        ssdlite320_mobilenet_v3_large,
+    )
+
+
+def train_detector(
+    plan: dict[str, Any],
+    data_root: Path,
+    output_dir: Path,
+    config: DetectorTrainConfig,
+) -> dict[str, Any]:
+    """Train the first single-class full-frame speed-sign detector baseline."""
+    if not plan.get("trainable"):
+        raise ValueError(
+            "training_plan_not_trainable: detector needs positive train and validation frames"
+        )
+
+    (
+        torch,
+        Image,
+        DataLoader,
+        Dataset,
+        TF,
+        BackboneWeights,
+        ssdlite320_mobilenet_v3_large,
+    ) = _require_detector_stack()
+
+    if config.device == "cuda" and not torch.cuda.is_available():
+        raise ValueError("cuda_unavailable")
+    device = torch.device(config.device)
+
+    random.seed(config.seed)
+    torch.manual_seed(config.seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(config.seed)
+
+    root = Path(data_root).resolve()
+
+    class DetectionDataset(Dataset):
+        def __init__(self, frames):
+            self.frames = frames
+
+        def __len__(self):
+            return len(self.frames)
+
+        def __getitem__(self, index):
+            row = self.frames[index]
+            path = _safe_image_path(root, row["image_path"])
+            with Image.open(path) as source:
+                image = source.convert("RGB")
+                tensor = TF.pil_to_tensor(image).float().div_(255.0)
+
+            boxes = torch.tensor(row["boxes"], dtype=torch.float32)
+            if boxes.numel() == 0:
+                boxes = boxes.reshape(0, 4)
+            labels = torch.ones((boxes.shape[0],), dtype=torch.int64)
+            target = {
+                "boxes": boxes,
+                "labels": labels,
+                "image_id": torch.tensor([index], dtype=torch.int64),
+            }
+            return tensor, target
+
+    def collate(batch):
+        return tuple(zip(*batch))
+
+    train_frames = [r for r in plan["frames"] if r["split"] == TRAIN_SPLIT]
+    val_frames = [r for r in plan["frames"] if r["split"] == VALIDATION_SPLIT]
+    generator = torch.Generator().manual_seed(config.seed)
+    train_loader = DataLoader(
+        DetectionDataset(train_frames),
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        collate_fn=collate,
+        generator=generator,
+    )
+    val_loader = DataLoader(
+        DetectionDataset(val_frames),
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        collate_fn=collate,
+    )
+
+    backbone_weights = BackboneWeights.DEFAULT if config.pretrained_backbone else None
+    model = ssdlite320_mobilenet_v3_large(
+        weights=None,
+        weights_backbone=backbone_weights,
+        num_classes=2,
+    )
+    model.to(device)
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+    )
+    use_amp = bool(config.amp and device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=False)
+    plan_path = output_dir / "training-plan.json"
+    plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def move_targets(targets):
+        return [{k: v.to(device, non_blocking=True) for k, v in target.items()} for target in targets]
+
+    def validation_loss() -> float:
+        # torchvision detection models expose training losses only in train mode.
+        # Keep BatchNorm frozen so validation does not mutate running statistics.
+        model.train()
+        for module in model.modules():
+            if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+                module.eval()
+        total = 0.0
+        seen = 0
+        with torch.no_grad():
+            for images, targets in val_loader:
+                images = [img.to(device, non_blocking=True) for img in images]
+                targets = move_targets(targets)
+                with torch.cuda.amp.autocast(enabled=use_amp):
+                    losses = model(images, targets)
+                    loss = sum(losses.values())
+                total += float(loss.detach()) * len(images)
+                seen += len(images)
+        return total / max(seen, 1)
+
+    history = []
+    best_validation_loss = float("inf")
+    best_path = output_dir / "detector-best.pt"
+
+    for epoch in range(config.epochs):
+        model.train()
+        train_total = 0.0
+        train_seen = 0
+        for images, targets in train_loader:
+            images = [img.to(device, non_blocking=True) for img in images]
+            targets = move_targets(targets)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                losses = model(images, targets)
+                loss = sum(losses.values())
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            train_total += float(loss.detach()) * len(images)
+            train_seen += len(images)
+
+        val_loss = validation_loss()
+        epoch_result = {
+            "epoch": epoch + 1,
+            "train_loss": train_total / max(train_seen, 1),
+            "validation_loss": val_loss,
+        }
+        history.append(epoch_result)
+
+        if val_loss < best_validation_loss:
+            best_validation_loss = val_loss
+            torch.save({
+                "format_version": 1,
+                "architecture": "ssdlite320_mobilenet_v3_large",
+                "task": "detector",
+                "classes": ["background", "speed_sign"],
+                "state_dict": model.state_dict(),
+                "dataset_sha256": plan["dataset_sha256"],
+                "split_sha256": plan["split_sha256"],
+                "epoch": epoch + 1,
+                "validation_loss": best_validation_loss,
+            }, best_path)
+
+    gpu = None
+    if device.type == "cuda":
+        gpu = {
+            "name": torch.cuda.get_device_name(device),
+            "capability": list(torch.cuda.get_device_capability(device)),
+            "total_memory_bytes": int(torch.cuda.get_device_properties(device).total_memory),
+        }
+
+    result = {
+        "task": "detector",
+        "architecture": "ssdlite320_mobilenet_v3_large",
+        "classes": ["background", "speed_sign"],
+        "best_validation_loss": best_validation_loss,
+        "checkpoint": str(best_path),
+        "training_plan": str(plan_path),
+        "device": str(device),
+        "gpu": gpu,
+        "torch_version": torch.__version__,
+        "config": config.__dict__,
+        "history": history,
+        "limitations": plan["limitations"],
+    }
+    (output_dir / "result.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return result
+
+
 def train_reader(
     plan: dict[str, Any],
     data_root: Path,
