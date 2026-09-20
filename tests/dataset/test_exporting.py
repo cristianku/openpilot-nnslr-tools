@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from nnslr_tools.exporting import reader_io_contract
+from nnslr_tools.exporting import detector_io_contract, reader_io_contract
 
 
 def test_reader_io_contract_freezes_preprocessing_and_classes() -> None:
@@ -35,3 +35,26 @@ def test_reader_io_contract_freezes_preprocessing_and_classes() -> None:
 def test_reader_io_contract_rejects_incomplete_checkpoint_metadata(checkpoint) -> None:
     with pytest.raises(ValueError):
         reader_io_contract(checkpoint)
+
+
+
+def test_detector_io_contract_freezes_full_frame_interface() -> None:
+    contract = detector_io_contract(
+        {
+            "task": "detector",
+            "classes": ["background", "speed_sign"],
+            "dataset_sha256": "a" * 64,
+            "split_sha256": "b" * 64,
+        }
+    )
+
+    assert contract["input"]["shape"] == [1, 3, 320, 320]
+    assert contract["input"]["value_range"] == [0.0, 1.0]
+    assert contract["outputs"]["boxes"]["format"] == "xyxy"
+    assert contract["outputs"]["labels"]["mapping"] == {"1": "speed_sign"}
+    assert contract["postprocessing"] == "model_includes_score_filtering_and_nms"
+
+
+def test_detector_io_contract_rejects_wrong_checkpoint() -> None:
+    with pytest.raises(ValueError):
+        detector_io_contract({"task": "reader", "classes": ["speed_sign"]})
